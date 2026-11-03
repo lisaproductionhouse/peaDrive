@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "destination": "/tmp/.tmpLOR9kZ/out/big.bin",
+      "direction": "download",
+      "done_bytes": 20983865,
+      "error_msg": "",
+      "id": "1",
+      "name": "big.bin",
+      "source": "Google Drive · me@example.com",
+      "speed": 0,
+      "status": "completed",
+      "total_bytes": 20983865
+    }
+  ],
+  "paused": false,
+  "ready": true,
+  "ready_reason": "",
+  "smart": 0
+}
