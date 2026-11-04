@@ -3,7 +3,7 @@
  * Được Tauri chèn vào mọi trang của cửa sổ chính TRƯỚC khi script của trang chạy, nên index.html giữ nguyên:
  *   - fetch('/api/…')  →  invoke('api', { method, url, body })  (không có HTTP server nào)
  *   - window.open(url) →  mở bằng trình duyệt mặc định của hệ điều hành
- *   - Ctrl/⌘ + ,       →  hộp thoại Cài đặt (Google OAuth + hiệu năng); tự mở khi chưa có Client ID
+ *   - Ctrl/⌘ + ,       →  hộp thoại Cài đặt (hiệu năng tải, quota & toàn vẹn); thông số API/OAuth cố định trong mã nguồn nên không có ô nhập
  */
 (() => {
   'use strict';
@@ -48,10 +48,8 @@
         showBlock();
         return new Promise(() => {});
       }
-      if (msg.startsWith(OAUTH_MARK)) {
-        msg = msg.slice(OAUTH_MARK.length);
-        setTimeout(() => openSettings(), 60);
-      }
+      // Bản build thiếu Google Client ID: chỉ báo lỗi gọn (không còn ô nhập trong Cài đặt — thông số API cố định trong mã nguồn).
+      if (msg.startsWith(OAUTH_MARK)) msg = msg.slice(OAUTH_MARK.length);
       return new Response(msg, { status: 400, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     }
   };
@@ -71,8 +69,6 @@
       'Cập nhật ngay': 'Update now',
       'Cài đặt peaDrive': 'peaDrive Settings',
       'Hiệu năng tải và tuỳ chọn cá nhân. Phím tắt: Ctrl/⌘ + ,': 'Download performance and personal options. Shortcut: Ctrl/⌘ + ,',
-      'Google OAuth và hiệu năng tải. Phím tắt: Ctrl/⌘ + ,': 'Google OAuth and download performance. Shortcut: Ctrl/⌘ + ,',
-      'Tạo trong Google Cloud Console → Credentials → OAuth client ID → loại Desktop app, và bật Google Drive API.': 'Create it in Google Cloud Console → Credentials → OAuth client ID → type Desktop app, and enable the Google Drive API.',
       'HIỆU NĂNG': 'PERFORMANCE',
       'WORKER MỖI FILE (1–32)': 'WORKERS PER FILE (1–32)',
       'CHUNK (MiB)': 'CHUNK (MiB)',
@@ -92,8 +88,6 @@
       'Cập nhật ngay': '立即更新',
       'Cài đặt peaDrive': 'peaDrive 设置',
       'Hiệu năng tải và tuỳ chọn cá nhân. Phím tắt: Ctrl/⌘ + ,': '下载性能与个人选项。快捷键：Ctrl/⌘ + ,',
-      'Google OAuth và hiệu năng tải. Phím tắt: Ctrl/⌘ + ,': 'Google OAuth 与下载性能。快捷键：Ctrl/⌘ + ,',
-      'Tạo trong Google Cloud Console → Credentials → OAuth client ID → loại Desktop app, và bật Google Drive API.': '在 Google Cloud Console → 凭据 → OAuth 客户端 ID 中创建，类型选“桌面应用”，并启用 Google Drive API。',
       'HIỆU NĂNG': '性能',
       'WORKER MỖI FILE (1–32)': '每个文件的线程数 (1–32)',
       'CHUNK (MiB)': '分块 (MiB)',
@@ -189,11 +183,6 @@
       return h('label', { style: { display: 'flex', alignItems: 'flex-start', margin: '8px 0', cursor: 'pointer' } }, cb, h('span', { text, style: { color: 'var(--text-2)' } }));
     };
 
-    // Build đã nhúng sẵn Client ID (bản phát hành): người dùng cuối không phải (và không cần) nhập API → ẩn ô nhập.
-    // Build dev không nhúng thì vẫn hiện để dán Client ID vào.
-    const embedded = !!data.oauth.embedded;
-    const id = embedded ? null : h('input', { value: data.oauth.client_id, placeholder: 'xxxxxxxx.apps.googleusercontent.com', spellcheck: 'false', autocomplete: 'off' });
-    const secret = embedded ? null : h('input', { type: 'password', value: data.oauth.client_secret, spellcheck: 'false', autocomplete: 'off' });
     const grid = h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 14px' } },
       field(t('WORKER MỖI FILE (1–32)'), num('workers', 1, 32)),
       field(t('CHUNK (MiB)'), num('chunkMib', 1, 128)),
@@ -206,7 +195,7 @@
       grid.querySelectorAll('input[data-k]').forEach((i) => { settings[i.dataset.k] = Number(i.value) || st[i.dataset.k]; });
       ov.querySelectorAll('input[type=checkbox][data-k]').forEach((i) => { settings[i.dataset.k] = i.checked; });
       try {
-        await rpc('POST', '/api/settings', embedded ? { settings } : { oauth: { client_id: id.value, client_secret: secret.value }, settings });
+        await rpc('POST', '/api/settings', { settings });
         close();
         notify(t('Đã lưu cài đặt'));
       } catch (e) { err.textContent = String(e); err.hidden = false; }
@@ -215,10 +204,7 @@
     const err = h('div', { class: 'err', hidden: '' });
     const ov = h('div', { class: 'overlay pd-settings' },
       h('div', { class: 'dialog link-dlg', style: { maxHeight: 'calc(100vh - 40px)', overflow: 'auto' } },
-        h('div', { class: 'head' }, h('div', {}, h('h3', { text: t('Cài đặt peaDrive') }), h('p', { text: embedded ? t('Hiệu năng tải và tuỳ chọn cá nhân. Phím tắt: Ctrl/⌘ + ,') : t('Google OAuth và hiệu năng tải. Phím tắt: Ctrl/⌘ + ,') }))),
-        embedded ? null : field('GOOGLE OAUTH — CLIENT ID (DESKTOP APP)', id),
-        embedded ? null : field('CLIENT SECRET', secret),
-        embedded ? null : h('p', { style: { fontSize: '10.5px', marginTop: '6px' }, text: t('Tạo trong Google Cloud Console → Credentials → OAuth client ID → loại Desktop app, và bật Google Drive API.') }),
+        h('div', { class: 'head' }, h('div', {}, h('h3', { text: t('Cài đặt peaDrive') }), h('p', { text: t('Hiệu năng tải và tuỳ chọn cá nhân. Phím tắt: Ctrl/⌘ + ,') }))),
         h('div', { class: 'lbl', text: t('HIỆU NĂNG') }), grid,
         h('p', { style: { fontSize: '10.5px', margin: '2px 0 4px' }, text: t('RAM tối đa cho ring buffer ≈ worker × ring × số file song song.') }),
         h('div', { class: 'lbl', text: t('QUOTA & TOÀN VẸN') }),
@@ -230,7 +216,7 @@
     ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(); });
     ov.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
     document.body.appendChild(ov);
-    (embedded || data.oauth.configured ? ov.querySelector('input[data-k]') : id).focus();
+    ov.querySelector('input[data-k]').focus();
   }
 
   document.addEventListener('keydown', (e) => {

@@ -36,7 +36,7 @@ pub fn run() {
             std::fs::create_dir_all(&dir)?;
 
             // Nhiều tài khoản Google: danh sách ở accounts.json, token từng tài khoản trong keychain của hệ điều hành.
-            let auth = Auth::open(api::load_oauth(&dir), Arc::new(KeyringStore::new()), Some(dir.join("accounts.json")), Endpoints::default())?;
+            let auth = Auth::open(api::load_oauth(), Arc::new(KeyringStore::new()), Some(dir.join("accounts.json")), Endpoints::default())?;
             let pool = ClientPool::new(auth.clone());
             let manager = tauri::async_runtime::block_on(async { Manager::new(pool.clone(), dir.clone(), api::load_settings(&dir)) });
 
