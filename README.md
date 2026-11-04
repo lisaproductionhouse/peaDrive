@@ -18,7 +18,7 @@ Kiến trúc chi tiết (kèm bảng endpoint giao diện ↔ backend): [`docs/A
 1. [Google Cloud Console](https://console.cloud.google.com/) → tạo project → bật **Google Drive API**.
 2. *OAuth consent screen* → thêm tài khoản của bạn làm **Test user**; ở mục *Data access* khai báo **đúng hai scope** `drive.readonly` và `drive.file` (xem bên dưới; bản `full-drive`: đúng **một** scope `drive`, ở project riêng).
 3. *Credentials* → **Create credentials → OAuth client ID** → loại **Desktop app**.
-4. Mở peaDrive và bấm đăng nhập: nếu bản build chưa nhúng sẵn Client ID, hộp thoại **Cài đặt** tự mở (cũng mở được bằng **Ctrl/⌘ + ,** hoặc nút bánh răng) — dán *Client ID* và *Client secret*. Bản build đã nhúng sẵn (đặt `PEADRIVE_CLIENT_ID` / `PEADRIVE_CLIENT_SECRET` lúc build) thì bỏ qua bước này và hộp thoại không có ô nhập OAuth.
+4. Điền *Client ID* và *Client secret* vào file của flavor ở **gốc dự án**: `.env.public` (bản mặc định) hoặc `.env.personal` (bản `full-drive`) — sao chép từ `.env.public.example` / `.env.personal.example`. `build.rs` đọc file lúc build và **khoá cứng** vào app: người dùng cuối không nhập và không đổi được (Cài đặt không có ô nhập API/OAuth; app không đọc client từ file, biến môi trường hay Cài đặt lúc chạy). Hai file thật chứa secret nên nằm trong `.gitignore`; chỉ commit file `.example`. Chi tiết: [`docs/FLAVORS.md`](docs/FLAVORS.md).
 
 > **Lưu ý**
 > - **Scope** (hằng `OAUTH_SCOPES` trong `crates/peadrive-core/src/config.rs`; phải khớp từng chữ với danh sách ở consent screen). Bản mặc định xin hai scope:
@@ -39,9 +39,9 @@ Yêu cầu: Rust ≥ 1.85, [Tauri prerequisites](https://v2.tauri.app/start/prer
 ```bash
 cargo install tauri-cli --version "^2" --locked
 
-# (tuỳ chọn) nhúng sẵn OAuth client lúc build
-export PEADRIVE_CLIENT_ID=xxxx.apps.googleusercontent.com
-export PEADRIVE_CLIENT_SECRET=xxxx
+# OAuth client của từng flavor nằm trong file riêng ở gốc dự án (xem bước 4 ở trên)
+cp .env.public.example .env.public          # rồi điền PEADRIVE_CLIENT_ID / PEADRIVE_CLIENT_SECRET
+cp .env.personal.example .env.personal      # chỉ cần khi build bản cá nhân
 
 cargo tauri dev            # chạy thử (bản public)
 cargo tauri build          # .msi/.exe (Windows), .app/.dmg (macOS)
@@ -49,6 +49,8 @@ cargo tauri build          # .msi/.exe (Windows), .app/.dmg (macOS)
 # Bản cá nhân (toàn quyền Drive): scope `drive`, tên app / identifier / keychain riêng — xem docs/FLAVORS.md
 cargo tauri build --features full-drive --config src-tauri/tauri.personal.conf.json
 ```
+
+Build **phát hành** (`cargo tauri build`) dừng với lỗi rõ ràng nếu file của flavor thiếu hoặc chưa điền đủ Client ID / secret; build dev và test chỉ cảnh báo (đăng nhập sẽ báo "chưa được nhúng Client ID"). Biến môi trường `PEADRIVE_CLIENT_*` trong shell bị bỏ qua, nên không thể nhúng nhầm client của flavor khác.
 
 Kiểm thử (không cần Tauri/WebView):
 
@@ -90,7 +92,7 @@ tools/ui-smoke         thử giao diện trong jsdom
 | **Nhập danh sách (.txt)** | Nút ở đầu mỗi khung: mỗi dòng là một tên file/thư mục (có thể kèm đường dẫn; dòng trống và dòng bắt đầu bằng `#` bị bỏ qua), khớp không phân biệt hoa/thường; dòng không có đuôi (vd `DSC00123`) khớp mọi file cùng tên gốc (`.ARW`, `.JPG`…). Các mục khớp được tick (thay cho vùng chọn hiện tại), chỉ đối chiếu với mục đang hiển thị. |
 | **Đảo chiều vùng chọn** | Nút icon bên trái tiêu đề cột *Tên*: chưa chọn mục nào → **chọn tất cả**; đã có mục được chọn → **đảo chiều**. |
 | **Thanh công cụ** | *Thư mục mới* và *Tải xuống* nằm cạnh menu tài khoản; *Smart Upload* nằm bên trái *Tải lên*. |
-| **Nút Cài đặt** | Biểu tượng bánh răng ở cuối thanh công cụ (sau nút sáng/tối) mở bảng cài đặt bất cứ lúc nào; Ctrl/⌘ + `,` vẫn dùng được. Bản build đã nhúng sẵn OAuth client thì bảng chỉ còn thiết lập cá nhân (hiệu năng tải, quota & toàn vẹn), không có ô nhập API/OAuth; bản chưa nhúng (dev) vẫn hiện ô nhập Client ID / secret. |
+| **Nút Cài đặt** | Biểu tượng bánh răng ở cuối thanh công cụ (sau nút sáng/tối) mở bảng cài đặt bất cứ lúc nào; Ctrl/⌘ + `,` vẫn dùng được. Bảng chỉ còn thiết lập cá nhân (hiệu năng tải, quota & toàn vẹn): OAuth client đã khoá cứng lúc build nên không có ô nhập API/OAuth. |
 | **Chấm trạng thái** (thanh dưới) | Thay chữ "Sẵn sàng": **xanh** = sẵn sàng, **đỏ** = chưa sẵn sàng, tooltip nêu lý do — chưa đăng nhập Google Drive, không liên lạc được với Google (mất mạng), hoặc không liên lạc được với backend. Dữ liệu thật: backend trả `ready` + `ready_reason` trong `/api/transfer/queue` (hỏi mỗi 0,5 s) và `/api/status` (mỗi 15 s); `DriveClient::reachable` dựa vào kết quả các request thật trong 10 giây gần nhất, hoặc một `HEAD` nhẹ khi đang rảnh. |
 | **Smart Upload** | Xem mục dưới. |
 
@@ -124,7 +126,7 @@ Ngay khi app khởi động, backend gọi `GET <API>?app=peadrive&version=<phi�
 - `force_update = true` (thấp hơn `min_required_version`) → **app bị chặn hoàn toàn**: lớp phủ làm mờ toàn bộ app, bên trên là modal không tắt/ẩn được ("Phiên bản ứng dụng của bạn đã cũ. Vui lòng cập nhật lên phiên bản mới nhất để tiếp tục sử dụng." + nút **Cập nhật ngay**). Nút mở **liên kết tải thẳng** `https://www.peamark.com/app-api/download.php?app=peadrive&os=win` bằng trình duyệt mặc định. Việc chặn nằm **ở backend**: mọi lời gọi khác bị từ chối và các tác vụ đang chạy bị tạm dừng, nên không vượt qua được bằng cách bỏ qua giao diện.
 - `update_available = true` (thấp hơn `latest_version`) → chỉ hiện thông báo có bản mới như trước, không chặn.
 - Không liên lạc được máy chủ / máy chủ trả lỗi → **không chặn** (chỉ chặn khi máy chủ nói rõ phiên bản đã cũ).
-- Phiên bản app lấy từ `version` trong `Cargo.toml` (workspace) và `src-tauri/tauri.conf.json` — **hiện đặt `0.0.1`** (khớp `latest_version` trong `app_config.json`); nhớ đổi cả hai khi phát hành bản mới.
+- Phiên bản app lấy từ `version` trong `Cargo.toml` (workspace) và `src-tauri/tauri.conf.json` — **hiện đặt `0.0.1`** (giai đoạn đang phát triển, chưa phát hành); cả hai flavor dùng chung một phiên bản. Khi phát hành bản mới nhớ đổi cả hai file (cargo tự cập nhật dòng `peadrive` / `peadrive-core` trong `Cargo.lock` khi build); test `app_version_is_defined_once_and_matches_tauri_conf` báo ngay nếu hai file lệch nhau. **Lưu ý máy chủ:** với `0.0.1`, máy chủ sẽ coi app thấp hơn `latest_version` (hiện thông báo có bản mới) và nếu thấp hơn `min_required_version` thì lớp chặn bắt buộc cập nhật xuất hiện — trong giai đoạn đang phát triển hãy đặt cả hai giá trị này trong `app_config.json` về `0.0.1`, hoặc build với `PEADRIVE_VERSION_API` trỏ sang máy chủ thử nghiệm (xem dòng dưới) để không ảnh hưởng người dùng bản đã phát hành.
 - URL API mặc định `https://www.peamark.com/app-api/check_version.php`; cố định trong mã nguồn (`config.rs`). Muốn trỏ một bản build sang máy chủ khác (thử nghiệm) thì đặt biến môi trường `PEADRIVE_VERSION_API` **lúc build**; lúc chạy app không đọc biến môi trường nên người dùng cuối không đổi được.
 - **Liên kết tải bản mới** — nút *Cập nhật ngay* của lớp chặn và nút *Tải về* của thanh "Đã có bản mới" — là hằng số `UPDATE_URL` trong `crates/peadrive-core/src/config.rs`: `https://www.peamark.com/app-api/download.php?app=peadrive&os=win` trên Windows, `os=mac` trên macOS (`https://www.peamark.com/app-api/download.php?app=peadrive&os=mac`). Địa chỉ phải là `https` (route mở link từ chối mọi scheme khác) và chỉ khai báo ở đúng một chỗ: `bridge.js` không giữ bản sao nào mà hỏi backend qua `/api/status`.
 

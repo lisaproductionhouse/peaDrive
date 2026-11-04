@@ -214,10 +214,6 @@ impl Auth {
         self.cfg.read().unwrap().clone()
     }
 
-    pub fn set_config(&self, cfg: OAuthConfig) {
-        *self.cfg.write().unwrap() = cfg;
-    }
-
     /// Token gắn với một tài khoản cố định (dùng cho `DriveClient` của tài khoản đó).
     pub fn token_source(self: &Arc<Self>, account: &str) -> Arc<dyn TokenSource> {
         Arc::new(AccountSource { auth: self.clone(), id: account.to_string() })
@@ -314,7 +310,7 @@ impl Auth {
         let cfg = self.config();
         if !cfg.is_configured() {
             return Err(Error::Auth(
-                "Chưa có Google OAuth Client ID (loại Desktop app). Mở Cài đặt → Google OAuth để nhập.".into(),
+                "Bản cài đặt này chưa được nhúng Google OAuth Client ID (loại Desktop app).".into(),
             ));
         }
         let pkce = pkce::Pkce::generate();

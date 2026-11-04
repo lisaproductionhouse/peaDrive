@@ -60,7 +60,6 @@ function makeBackend(opts = {}) {
     ready: opts.ready ?? true,            // trạng thái sẵn sàng backend báo cho chấm ở thanh dưới
     readyReason: opts.readyReason ?? '',
     queueDown: false,                     // true = gọi hàng đợi thất bại (mô phỏng mất liên lạc với backend)
-    oauthEmbedded: opts.oauthEmbedded ?? false,   // true = bản build đã nhúng sẵn Client ID (Cài đặt ẩn ô nhập OAuth)
   };
   async function invoke(cmd, args) {
     assert.equal(cmd, 'api', 'chỉ có đúng một lệnh Tauri: api');
@@ -88,7 +87,7 @@ function makeBackend(opts = {}) {
         return { ok: true, active: st.active, accounts: st.accounts };
       }
       case 'POST /api/login':
-        if (!st.oauthConfigured) throw 'E_OAUTH_CONFIG:Chưa có Google OAuth Client ID (loại Desktop app).';
+        if (!st.oauthConfigured) throw 'E_OAUTH_CONFIG:Bản cài đặt này chưa được nhúng Google OAuth Client ID. Hãy liên hệ nhà phát triển.';
         // "Trình duyệt" đăng nhập xong sau ~0,5 giây: thêm tài khoản mới và chuyển sang nó.
         setTimeout(() => { if (!closed) { st.accounts = [...st.accounts, { id: 'new@example.com', email: 'new@example.com', name: 'Mới' }]; st.active = 'new@example.com'; st.signins++; } }, 500);
         return { ok: true };
@@ -115,12 +114,12 @@ function makeBackend(opts = {}) {
         return opts.upload ? opts.upload(body) : { queued: (body.paths || []).length, skipped: 0, folders: 0, destination: 'Drive của tôi', warnings: [] };
       case 'GET /api/session': return st.session;
       case 'GET /api/update/check':
-        return st.updateInfo ?? { available: st.force, force: st.force, version: '1.0.9', current: 'v0.0.1', min_required: '1.0.9', status: st.force ? 'force_update' : 'up_to_date', url: UPDATE_URL, notes: '' };
+        return st.updateInfo ?? { available: st.force, force: st.force, version: '1.0.9', current: 'v1.0.5', min_required: '1.0.9', status: st.force ? 'force_update' : 'up_to_date', url: UPDATE_URL, notes: '' };
       case 'POST /api/transfer/download': return { added: (body.items || []).length, warnings: [] };
       case 'POST /api/session': return { ok: true };
       case 'POST /api/open':
       case 'POST /api/update/open': return { ok: true };
-      case 'GET /api/settings': return { oauth: { client_id: '', client_secret: '', configured: st.oauthConfigured, embedded: st.oauthEmbedded }, settings: SETTINGS, data_dir: '/tmp' };
+      case 'GET /api/settings': return { settings: SETTINGS, data_dir: '/tmp' };
       case 'POST /api/settings': return { ok: true };
       default: throw `Không có API ${route}`;
     }
@@ -484,24 +483,31 @@ test('phiên khôi phục: hộp thoại hiện ra và "tiếp tục" gọi /api
   } finally { app.close(); }
 });
 
-test('chưa có OAuth Client ID: đăng nhập báo lỗi gọn + tự mở Cài đặt, lưu gửi đúng dữ liệu', async () => {
+test('bản build thiếu Client ID: đăng nhập báo lỗi gọn, KHÔNG tự mở Cài đặt; Cài đặt không còn ô nhập API', async () => {
   const b = makeBackend({ connected: false, oauthConfigured: false, accounts: [], active: null });
   const app = await boot(b);
   try {
     await until(() => hasCall(b, 'GET', '/api/status'), 'status');
     app.document.getElementById('accountBtn').click();
     await until(() => hasCall(b, 'POST', '/api/login'), 'login');
-    const ov = await until(() => app.document.querySelector('.overlay.pd-settings'), 'hộp thoại Cài đặt');
-    const toast = app.document.getElementById('toastText').textContent;
-    assert.match(toast, /Client ID/);
+    const toast = await until(() => { const t = app.document.getElementById('toastText').textContent; return /Client ID/.test(t) ? t : ''; }, 'thông báo lỗi');
     assert.ok(!toast.includes('E_OAUTH_CONFIG'), 'mã lỗi nội bộ không được lộ ra UI');
-    await until(() => ov.querySelector('input[placeholder*="googleusercontent"]'), 'ô Client ID');
-    ov.querySelector('input[placeholder*="googleusercontent"]').value = 'abc.apps.googleusercontent.com';
+    assert.ok(!/Cài đặt/.test(toast), 'không còn chỉ người dùng vào Cài đặt để nhập API');
+    await new Promise((r) => setTimeout(r, 250));
+    assert.equal(app.document.querySelector('.overlay.pd-settings'), null, 'không tự mở Cài đặt nữa');
+
+    // Mở Cài đặt bằng nút bánh răng: chỉ còn thiết lập cá nhân, không có ô nhập API/OAuth.
+    app.document.getElementById('btnSettings').click();
+    const ov = await until(() => app.document.querySelector('.overlay.pd-settings'), 'hộp thoại Cài đặt');
+    assert.ok(!/OAuth|CLIENT ID|SECRET|googleusercontent/i.test(ov.textContent), 'không còn phần cấu hình API');
+    assert.equal(ov.querySelectorAll('input[type="password"]').length, 0, 'không còn ô Client Secret');
+    assert.equal(ov.querySelector('input[placeholder*="googleusercontent"]'), null, 'không còn ô Client ID');
     ov.querySelector('button.primary').click();
     await until(() => hasCall(b, 'POST', '/api/settings'), 'lưu cài đặt');
     const saved = b.calls.find((c) => c.method === 'POST' && c.url === '/api/settings').body;
-    assert.equal(saved.oauth.client_id, 'abc.apps.googleusercontent.com');
+    assert.equal(saved.oauth, undefined, 'không gửi thông số OAuth lên backend');
     assert.equal(saved.settings.workers, 8);
+    assert.deepEqual(app.errors, []);
   } finally { app.close(); }
 });
 
@@ -559,26 +565,6 @@ test('nút Cài đặt (bánh răng) mở bảng cài đặt bất cứ lúc nà
     btn.click();
     await until(() => app.document.querySelector('.overlay.pd-settings'), 'bảng cài đặt');
     assert.ok(hasCall(b, 'GET', '/api/settings'), 'bảng cài đặt nạp cấu hình từ backend');
-    assert.deepEqual(app.errors, []);
-  } finally { app.close(); }
-});
-
-test('build đã nhúng sẵn Client ID: Cài đặt không hiện ô nhập OAuth, lưu chỉ gửi phần hiệu năng', async () => {
-  const b = makeBackend({ oauthEmbedded: true });
-  const app = await boot(b);
-  try {
-    await until(() => rows(app).length === 5, 'Drive đã tải');
-    app.document.getElementById('btnSettings').click();
-    const ov = await until(() => app.document.querySelector('.overlay.pd-settings'), 'bảng cài đặt');
-    assert.equal(ov.querySelectorAll('input[type=password]').length, 0, 'không có ô Client Secret');
-    assert.equal(ov.querySelector('input[placeholder*="googleusercontent"]'), null, 'không có ô Client ID');
-    assert.ok(!/GOOGLE OAUTH/.test(ov.textContent), 'không có phần Google OAuth');
-    assert.ok(ov.querySelector('input[data-k]'), 'vẫn còn phần hiệu năng tải');
-    ov.querySelector('button.primary').click();
-    await until(() => hasCall(b, 'POST', '/api/settings'), 'lưu cài đặt');
-    const saved = b.calls.find((c) => c.method === 'POST' && c.url === '/api/settings').body;
-    assert.ok(!('oauth' in saved), 'không gửi thông số OAuth khi build đã nhúng sẵn');
-    assert.equal(saved.settings.workers, 8);
     assert.deepEqual(app.errors, []);
   } finally { app.close(); }
 });
@@ -856,7 +842,7 @@ test('backend chặn route (E_OUTDATED) → overlay hiện, UI im lặng (không
 });
 
 test('phiên bản còn dùng được: không chặn (kể cả khi có bản mới không bắt buộc)', async () => {
-  const b = makeBackend({ updateInfo: { available: true, force: false, version: '1.0.9', current: 'v0.0.1', status: 'update_available', url: UPDATE_URL, notes: '' } });
+  const b = makeBackend({ updateInfo: { available: true, force: false, version: '1.0.9', current: 'v1.0.5', status: 'update_available', url: UPDATE_URL, notes: '' } });
   const app = await boot(b);
   try {
     await until(() => rows(app).length === 5, 'Drive đã tải');

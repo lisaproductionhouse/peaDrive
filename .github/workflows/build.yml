@@ -40,9 +40,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Chọn OAuth client theo flavor bằng bước kiểm tra tường minh: thiếu secret thì dừng, KHÔNG rơi về client của flavor kia
+      # OAuth client được khoá cứng vào bản build từ file `.env.<flavor>` ở gốc dự án (crates/peadrive-core/build.rs đọc).
+      # File thật không nằm trong git, nên job ghi nó từ secret; thiếu secret thì dừng, KHÔNG rơi về client của flavor kia
       # (client public khai scope khác; dùng nhầm sẽ xin sai scope so với consent screen).
-      - name: OAuth client của flavor ${{ matrix.flavor }}
+      - name: Ghi .env.${{ matrix.flavor }} (OAuth client của flavor ${{ matrix.flavor }})
         shell: bash
         env:
           PUBLIC_ID: ${{ secrets.PEADRIVE_CLIENT_ID }}
@@ -57,8 +58,8 @@ jobs:
             exit 1
           fi
           echo "::add-mask::$secret"
-          echo "PEADRIVE_CLIENT_ID=$id" >> "$GITHUB_ENV"
-          echo "PEADRIVE_CLIENT_SECRET=$secret" >> "$GITHUB_ENV"
+          umask 077
+          printf 'PEADRIVE_CLIENT_ID=%s\nPEADRIVE_CLIENT_SECRET=%s\n' "$id" "$secret" > ".env.${{ matrix.flavor }}"
 
       - uses: dtolnay/rust-toolchain@stable
         with:

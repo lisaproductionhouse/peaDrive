@@ -3,3 +3,7 @@
 *.part
 *.peadrive
 .DS_Store
+
+# OAuth client của từng flavor (chứa secret) — chỉ commit file .example
+.env.public
+.env.personal

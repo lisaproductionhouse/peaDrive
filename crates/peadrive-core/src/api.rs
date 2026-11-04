@@ -30,14 +30,14 @@ use crate::update::{self, VersionStatus};
 type Opener = Arc<dyn Fn(&str) -> crate::Result<()> + Send + Sync>;
 type Reveal = Arc<dyn Fn(&Path) -> std::io::Result<()> + Send + Sync>;
 
-/// Mã lỗi đặc biệt: UI (cầu nối) bắt được để mở hộp thoại nhập Google OAuth Client ID.
+/// Mã lỗi đặc biệt: bản build chưa nhúng Google OAuth Client ID. UI (cầu nối) bỏ tiền tố này và chỉ báo lỗi gọn.
 pub const E_OAUTH_CONFIG: &str = "E_OAUTH_CONFIG:";
 /// Mã lỗi đặc biệt: phiên bản app đã bị máy chủ yêu cầu cập nhật bắt buộc.
 pub const E_OUTDATED: &str = "E_OUTDATED:";
 pub const OUTDATED_MSG: &str = "Phiên bản ứng dụng của bạn đã cũ. Vui lòng cập nhật lên phiên bản mới nhất để tiếp tục sử dụng.";
 
 pub struct ApiConfig {
-    /// Thư mục dữ liệu ứng dụng (settings.json, oauth.json, jobs.json, accounts.json).
+    /// Thư mục dữ liệu ứng dụng (settings.json, jobs.json, accounts.json).
     pub data_dir: PathBuf,
     /// Thư mục tải mặc định (Downloads).
     pub default_dir: PathBuf,
@@ -76,10 +76,10 @@ pub struct Api {
     blocked: AtomicBool,
 }
 
-pub fn load_oauth(dir: &Path) -> OAuthConfig {
-    load_json::<OAuthConfig>(&dir.join("oauth.json"))
-        .filter(OAuthConfig::is_configured)
-        .unwrap_or_else(OAuthConfig::from_env)
+/// OAuth client của app: khoá cứng lúc build từ `.env.public` / `.env.personal` (xem `build.rs`), không đọc từ file
+/// (`oauth.json` cũ nếu còn thì bị bỏ qua), biến môi trường hay Cài đặt lúc chạy.
+pub fn load_oauth() -> OAuthConfig {
+    OAuthConfig::builtin()
 }
 
 pub fn load_settings(dir: &Path) -> Settings {
@@ -91,17 +91,12 @@ fn s(e: impl Display) -> String {
 }
 
 fn body_of<T: DeserializeOwned>(body: Option<Value>) -> Result<T, String> {
-    serde_json::from_value(body.unwrap_or(Value::Null))
-        .map_err(|e| format!("Dữ liệu gửi lên không hợp lệ: {e}"))
+    serde_json::from_value(body.unwrap_or(Value::Null)).map_err(|e| format!("Dữ liệu gửi lên không hợp lệ: {e}"))
 }
 
 /// ID Drive chỉ gồm chữ, số, `-`, `_` (hoặc `root`). Chặn mọi thứ có thể chen vào đường dẫn URL.
 fn check_id(id: &str) -> Result<&str, String> {
-    if !id.is_empty()
-        && id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
+    if !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
         Ok(id)
     } else {
         Err(format!("ID không hợp lệ: {id}"))
@@ -110,9 +105,7 @@ fn check_id(id: &str) -> Result<&str, String> {
 
 /// resourcekey của link Drive cũ, vd. `0-AbC_d`.
 fn check_rk(k: &str) -> Result<&str, String> {
-    if k.chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
+    if k.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
         Ok(k)
     } else {
         Err("resourcekey không hợp lệ".into())
@@ -215,25 +208,15 @@ struct UploadBody {
     use_fallback: bool,
 }
 
+/// Body của `POST /api/settings`: chỉ còn thiết lập cá nhân. OAuth client đã khoá cứng lúc build; khoá `oauth` do bản
+/// giao diện cũ gửi lên (nếu có) bị bỏ qua.
 #[derive(Deserialize)]
 struct SettingsUpdate {
-    oauth: Option<OAuthUpdate>,
     settings: Option<Settings>,
 }
 
-#[derive(Deserialize)]
-struct OAuthUpdate {
-    client_id: String,
-    client_secret: String,
-}
-
 impl Api {
-    pub fn new(
-        auth: Arc<Auth>,
-        pool: Arc<ClientPool>,
-        manager: Manager,
-        cfg: ApiConfig,
-    ) -> crate::Result<Arc<Self>> {
+    pub fn new(auth: Arc<Auth>, pool: Arc<ClientPool>, manager: Manager, cfg: ApiConfig) -> crate::Result<Arc<Self>> {
         Ok(Arc::new(Self {
             auth,
             pool,
@@ -268,14 +251,7 @@ impl Api {
                 return Some(v.clone());
             }
         }
-        match update::check(
-            &self.http,
-            &self.cfg.version_api,
-            &self.cfg.app_slug,
-            &self.cfg.version,
-        )
-        .await
-        {
+        match update::check(&self.http, &self.cfg.version_api, &self.cfg.app_slug, &self.cfg.version).await {
             Ok(v) => {
                 *cache = Some(v.clone());
                 if v.force_update {
@@ -309,9 +285,7 @@ impl Api {
                 "url": self.cfg.update_url,
                 "notes": "",
             }),
-            None => {
-                json!({"available": false, "force": false, "current": current, "status": "unknown", "url": self.cfg.update_url, "notes": ""})
-            }
+            None => json!({"available": false, "force": false, "current": current, "status": "unknown", "url": self.cfg.update_url, "notes": ""}),
         }
     }
 
@@ -320,14 +294,8 @@ impl Api {
     }
 
     /// Một lời gọi `fetch('/api/…')` của giao diện. `Err` → UI hiện nguyên chuỗi này trong toast/hộp thoại.
-    pub async fn call(
-        &self,
-        method: &str,
-        url: &str,
-        body: Option<Value>,
-    ) -> Result<Value, String> {
-        let u = url::Url::parse(&format!("http://local{url}"))
-            .map_err(|e| format!("URL không hợp lệ: {e}"))?;
+    pub async fn call(&self, method: &str, url: &str, body: Option<Value>) -> Result<Value, String> {
+        let u = url::Url::parse(&format!("http://local{url}")).map_err(|e| format!("URL không hợp lệ: {e}"))?;
         let q: HashMap<String, String> = u.query_pairs().into_owned().collect();
         let arg = |k: &str| q.get(k).map(String::as_str).unwrap_or("");
         let method = method.to_ascii_uppercase();
@@ -361,26 +329,12 @@ impl Api {
 
             ("GET", "/api/drive/about") => {
                 let a = self.client().await?.about().await.map_err(s)?;
-                Ok(
-                    json!({"email": a.email, "name": a.display_name, "usage": a.storage_usage, "limit": a.storage_limit.unwrap_or(0)}),
-                )
+                Ok(json!({"email": a.email, "name": a.display_name, "usage": a.storage_usage, "limit": a.storage_limit.unwrap_or(0)}))
             }
             ("GET", "/api/drive/list") => {
-                let loc = if arg("location").is_empty() {
-                    "my"
-                } else {
-                    arg("location")
-                };
-                let folder = if arg("folder_id").is_empty() {
-                    "root"
-                } else {
-                    arg("folder_id")
-                };
-                let rk = if arg("rk").is_empty() {
-                    None
-                } else {
-                    Some(check_rk(arg("rk"))?)
-                };
+                let loc = if arg("location").is_empty() { "my" } else { arg("location") };
+                let folder = if arg("folder_id").is_empty() { "root" } else { arg("folder_id") };
+                let rk = if arg("rk").is_empty() { None } else { Some(check_rk(arg("rk"))?) };
                 let c = self.client().await?;
                 let files = c.list_location(loc, folder, rk).await.map_err(s)?;
                 // Quyền drive.file: chỉ mục do peaDrive tạo mới sửa/xoá/chia sẻ được → giao diện vô hiệu hoá các thao tác đó cho mục còn lại.
@@ -410,12 +364,7 @@ impl Api {
                 if name.is_empty() {
                     return Err("Tên thư mục trống".into());
                 }
-                let f = self
-                    .client()
-                    .await?
-                    .mkdir(name, check_id(&b.parent_id)?)
-                    .await
-                    .map_err(s)?;
+                let f = self.client().await?.mkdir(name, check_id(&b.parent_id)?).await.map_err(s)?;
                 Ok(json!({"id": f.id, "name": f.name}))
             }
             ("POST", "/api/drive/rename") => {
@@ -423,11 +372,7 @@ impl Api {
                 if b.name.trim().is_empty() {
                     return Err("Tên mới trống".into());
                 }
-                self.client()
-                    .await?
-                    .rename(check_id(&b.file_id)?, b.name.trim())
-                    .await
-                    .map_err(s)?;
+                self.client().await?.rename(check_id(&b.file_id)?, b.name.trim()).await.map_err(s)?;
                 Ok(json!({"ok": true}))
             }
             ("POST", "/api/drive/delete") => {
@@ -444,12 +389,7 @@ impl Api {
                 Ok(json!({"ok": true, "count": b.file_ids.len()}))
             }
             ("POST", "/api/drive/share") => {
-                let link = self
-                    .client()
-                    .await?
-                    .share_link(check_id(arg("file_id"))?)
-                    .await
-                    .map_err(s)?;
+                let link = self.client().await?.share_link(check_id(arg("file_id"))?).await.map_err(s)?;
                 Ok(json!({ "share_link": link }))
             }
 
@@ -472,10 +412,7 @@ impl Api {
                 for i in &b.items {
                     let id = check_id(&i.id)?;
                     inputs.push(match i.resource_key.as_deref().filter(|k| !k.is_empty()) {
-                        Some(k) => format!(
-                            "https://drive.google.com/open?id={id}&resourcekey={}",
-                            check_rk(k)?
-                        ),
+                        Some(k) => format!("https://drive.google.com/open?id={id}&resourcekey={}", check_rk(k)?),
                         None => id.to_string(),
                     });
                 }
@@ -485,45 +422,24 @@ impl Api {
             // Tải lên thủ công: quét phần đã chọn một lần rồi xếp hàng (xem `engine::manual`).
             ("POST", "/api/transfer/upload") => {
                 let b: UploadBody = body_of(body)?;
-                let folder = if b.folder_id.is_empty() {
-                    "root"
-                } else {
-                    check_id(&b.folder_id)?
-                };
-                let req = UploadRequest {
-                    folder_id: folder.to_string(),
-                    paths: b.paths,
-                    use_fallback: b.use_fallback,
-                };
+                let folder = if b.folder_id.is_empty() { "root" } else { check_id(&b.folder_id)? };
+                let req = UploadRequest { folder_id: folder.to_string(), paths: b.paths, use_fallback: b.use_fallback };
                 let r = self.manager.upload_start(req).await.map_err(s)?;
                 serde_json::to_value(r).map_err(s)
             }
             // Smart Upload: worker nền theo dõi thư mục, chỉ tải file đã "yên" ≥ 2 phút (xem `engine::smart`).
             ("POST", "/api/transfer/smart-upload") => {
                 let b: SmartUpload = body_of(body)?;
-                let folder = if b.folder_id.is_empty() {
-                    "root"
-                } else {
-                    check_id(&b.folder_id)?
-                };
-                let req = SmartRequest {
-                    folder_id: folder.to_string(),
-                    paths: b.paths,
-                    extensions: b.extensions,
-                };
+                let folder = if b.folder_id.is_empty() { "root" } else { check_id(&b.folder_id)? };
+                let req = SmartRequest { folder_id: folder.to_string(), paths: b.paths, extensions: b.extensions };
                 let r = self.manager.smart_start(req).await.map_err(s)?;
                 serde_json::to_value(r).map_err(s)
             }
-            ("GET", "/api/transfer/smart-upload") => {
-                Ok(json!({ "items": self.manager.smart_list() }))
-            }
+            ("GET", "/api/transfer/smart-upload") => Ok(json!({ "items": self.manager.smart_list() })),
             ("POST", "/api/transfer/smart-upload/stop") => {
                 let id = match arg("id") {
                     "" => None,
-                    id => Some(
-                        id.parse::<u64>()
-                            .map_err(|_| "ID Smart Upload không hợp lệ".to_string())?,
-                    ),
+                    id => Some(id.parse::<u64>().map_err(|_| "ID Smart Upload không hợp lệ".to_string())?),
                 };
                 Ok(json!({"ok": true, "stopped": self.manager.smart_stop(id)}))
             }
@@ -531,15 +447,9 @@ impl Api {
                 let b: Link = body_of(body)?;
                 let dest = self.dest_dir(&b.dest_dir)?;
                 let meta = self.manager.resolve(&b.link).await.map_err(s)?;
-                let r = self
-                    .manager
-                    .enqueue(std::slice::from_ref(&b.link), &dest)
-                    .await
-                    .map_err(s)?;
+                let r = self.manager.enqueue(std::slice::from_ref(&b.link), &dest).await.map_err(s)?;
                 Self::enqueue_reply(r)?;
-                Ok(
-                    json!({"name": meta.name, "is_dir": meta.is_folder(), "dest_dir": dest.to_string_lossy()}),
-                )
+                Ok(json!({"name": meta.name, "is_dir": meta.is_folder(), "dest_dir": dest.to_string_lossy()}))
             }
             ("GET", "/api/transfer/queue") => {
                 let mut v = serde_json::to_value(self.manager.queue_view()).map_err(s)?;
@@ -552,19 +462,12 @@ impl Api {
             ("POST", "/api/transfer/cancel") => {
                 match arg("id") {
                     "" => self.manager.cancel_all(),
-                    id => self.manager.cancel(
-                        id.parse()
-                            .map_err(|_| "ID tác vụ không hợp lệ".to_string())?,
-                    ),
+                    id => self.manager.cancel(id.parse().map_err(|_| "ID tác vụ không hợp lệ".to_string())?),
                 }
                 Ok(json!({"ok": true}))
             }
             ("POST", "/api/transfer/retry") => {
-                self.manager.resume(
-                    arg("id")
-                        .parse()
-                        .map_err(|_| "ID tác vụ không hợp lệ".to_string())?,
-                );
+                self.manager.resume(arg("id").parse().map_err(|_| "ID tác vụ không hợp lệ".to_string())?);
                 Ok(json!({"ok": true}))
             }
             ("POST", "/api/transfer/pause") => {
@@ -575,9 +478,7 @@ impl Api {
                 self.manager.resume_all();
                 Ok(json!({"ok": true}))
             }
-            ("POST", "/api/transfer/clear") => {
-                Ok(json!({"ok": true, "removed": self.manager.clear_finished().len()}))
-            }
+            ("POST", "/api/transfer/clear") => Ok(json!({"ok": true, "removed": self.manager.clear_finished().len()})),
 
             ("GET", "/api/session") => serde_json::to_value(self.manager.session_info()).map_err(s),
             ("POST", "/api/session") => {
@@ -602,15 +503,6 @@ impl Api {
             ("GET", "/api/settings") => Ok(self.settings_json()),
             ("POST", "/api/settings") => {
                 let b: SettingsUpdate = body_of(body)?;
-                if let Some(o) = b.oauth {
-                    let cfg = OAuthConfig {
-                        client_id: o.client_id.trim().into(),
-                        client_secret: o.client_secret.trim().into(),
-                        ..self.auth.config()
-                    };
-                    save_json(&self.cfg.data_dir.join("oauth.json"), &cfg).map_err(s)?;
-                    self.auth.set_config(cfg);
-                }
                 if let Some(st) = b.settings {
                     self.save_settings(st)?;
                 }
@@ -623,11 +515,7 @@ impl Api {
 
     async fn status(&self) -> Result<Value, String> {
         let list = self.auth.accounts().await;
-        let account = list
-            .active
-            .as_ref()
-            .and_then(|id| list.accounts.iter().find(|a| &a.id == id))
-            .cloned();
+        let account = list.active.as_ref().and_then(|id| list.accounts.iter().find(|a| &a.id == id)).cloned();
         let login_error = self.login.lock().unwrap().error.take();
         let (ready, ready_reason) = self.readiness().await;
         Ok(json!({
@@ -665,11 +553,7 @@ impl Api {
     /// chuyển sang tài khoản đó.
     async fn remove_account(&self, id: &str) -> Result<Value, String> {
         let id = match id {
-            "" => self
-                .auth
-                .active_id()
-                .await
-                .ok_or_else(|| "Chưa đăng nhập tài khoản nào".to_string())?,
+            "" => self.auth.active_id().await.ok_or_else(|| "Chưa đăng nhập tài khoản nào".to_string())?,
             id => id.to_string(),
         };
         self.manager.pause_account(&id);
@@ -682,21 +566,14 @@ impl Api {
     /// Tài khoản mới được thêm vào danh sách và trở thành tài khoản đang dùng.
     fn login(&self) -> Result<Value, String> {
         if !self.auth.config().is_configured() {
-            return Err(format!(
-                "{E_OAUTH_CONFIG}Chưa có Google OAuth Client ID (loại Desktop app)."
-            ));
+            return Err(format!("{E_OAUTH_CONFIG}Bản cài đặt này chưa được nhúng Google OAuth Client ID. Hãy liên hệ nhà phát triển."));
         }
         let mut st = self.login.lock().unwrap();
         if let Some(t) = st.task.take() {
             t.abort(); // đóng socket loopback của lần chờ trước
         }
         st.error = None;
-        let (auth, opener, state, signins) = (
-            self.auth.clone(),
-            self.cfg.opener.clone(),
-            self.login.clone(),
-            self.signins.clone(),
-        );
+        let (auth, opener, state, signins) = (self.auth.clone(), self.cfg.opener.clone(), self.login.clone(), self.signins.clone());
         st.task = Some(tokio::spawn(async move {
             match auth.sign_in(|url| opener(url)).await {
                 Ok(_) => {
@@ -738,9 +615,7 @@ impl Api {
     }
 
     fn settings_json(&self) -> Value {
-        let o = self.auth.config();
         json!({
-            "oauth": {"client_id": o.client_id, "client_secret": o.client_secret, "configured": o.is_configured(), "embedded": OAuthConfig::embedded()},
             "settings": self.manager.settings(),
             "data_dir": self.cfg.data_dir.to_string_lossy(),
         })
@@ -752,32 +627,16 @@ mod tests {
     use super::*;
 
     fn item(authorized: Option<bool>, mime: &str) -> DriveFile {
-        DriveFile {
-            mime_type: mime.into(),
-            is_app_authorized: authorized,
-            ..Default::default()
-        }
+        DriveFile { mime_type: mime.into(), is_app_authorized: authorized, ..Default::default() }
     }
 
     #[test]
     fn only_items_the_app_may_write_are_modifiable_under_drive_file() {
         let plain = "application/pdf";
-        assert!(
-            can_modify(&item(None, plain), false),
-            "thiếu thông tin ⇒ coi là sửa được"
-        );
-        assert!(
-            can_modify(&item(Some(true), plain), false),
-            "mục do app tạo"
-        );
-        assert!(
-            !can_modify(&item(Some(false), plain), false),
-            "mục của người dùng"
-        );
-        assert!(
-            can_modify(&item(Some(false), plain), true),
-            "toàn quyền ⇒ luôn được"
-        );
+        assert!(can_modify(&item(None, plain), false), "thiếu thông tin ⇒ coi là sửa được");
+        assert!(can_modify(&item(Some(true), plain), false), "mục do app tạo");
+        assert!(!can_modify(&item(Some(false), plain), false), "mục của người dùng");
+        assert!(can_modify(&item(Some(false), plain), true), "toàn quyền ⇒ luôn được");
         // Shortcut: thao tác rơi vào file đích (không do app tạo) nên không sửa được dù bản thân shortcut do app tạo.
         let shortcut = "application/vnd.google-apps.shortcut";
         assert!(!can_modify(&item(Some(true), shortcut), false));
@@ -787,28 +646,15 @@ mod tests {
     #[test]
     fn upload_body_reads_the_fields_the_ui_sends() {
         // ui/app.js gửi { folder_id, paths, use_fallback }; serde bỏ qua khoá lạ nên gõ sai tên sẽ không báo lỗi → khoá lại ở đây.
-        let b: UploadBody = serde_json::from_value(
-            json!({ "folder_id": "F1", "paths": ["/a", "/b"], "use_fallback": true }),
-        )
-        .unwrap();
-        assert_eq!(
-            (b.folder_id.as_str(), b.paths.len(), b.use_fallback),
-            ("F1", 2, true)
-        );
+        let b: UploadBody = serde_json::from_value(json!({ "folder_id": "F1", "paths": ["/a", "/b"], "use_fallback": true })).unwrap();
+        assert_eq!((b.folder_id.as_str(), b.paths.len(), b.use_fallback), ("F1", 2, true));
         let minimal: UploadBody = serde_json::from_value(json!({ "paths": ["/a"] })).unwrap();
-        assert_eq!(
-            (minimal.folder_id.as_str(), minimal.use_fallback),
-            ("", false),
-            "folder_id và use_fallback là tuỳ chọn"
-        );
+        assert_eq!((minimal.folder_id.as_str(), minimal.use_fallback), ("", false), "folder_id và use_fallback là tuỳ chọn");
     }
 
     #[test]
     fn drive_item_reports_can_modify() {
-        assert_eq!(
-            drive_item(&item(Some(false), "application/pdf"), false)["can_modify"],
-            false
-        );
+        assert_eq!(drive_item(&item(Some(false), "application/pdf"), false)["can_modify"], false);
         assert_eq!(drive_item(&DriveFile::default(), true)["can_modify"], true);
     }
 }

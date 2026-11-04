@@ -109,16 +109,17 @@ impl Settings {
     }
 }
 
-/// OAuth client "Desktop app" do chính người dùng tạo trong Google Cloud Console.
-/// Với client loại Desktop, Google vẫn yêu cầu `client_secret` khi đổi code (không phải bí mật thật sự).
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
+/// OAuth client "Desktop app" của peaDrive — **khoá cứng lúc build**: người dùng không nhập và không đổi được.
+///
+/// Giá trị đến từ file theo flavor ở gốc workspace — `.env.public` (mặc định) hoặc `.env.personal` (cờ `full-drive`) —
+/// do `build.rs` đọc và nhúng; không đọc từ file lúc chạy, biến môi trường hay Cài đặt (xem docs/FLAVORS.md).
+/// Với client loại Desktop, Google vẫn yêu cầu `client_secret` khi đổi code nhưng không coi nó là bí mật thật sự.
+/// Endpoint OAuth (`auth`, `token`, `revoke`) cố định ở `auth::Endpoints::default()`.
+#[derive(Clone, Debug)]
 pub struct OAuthConfig {
     pub client_id: String,
     pub client_secret: String,
-    /// Luôn là `OAUTH_SCOPES` của bản build đang chạy. Cố ý KHÔNG đọc từ / ghi ra `oauth.json`: nếu không, scope
-    /// lưu trên đĩa sẽ ghi đè scope mới và app vẫn xin sai quyền.
-    #[serde(skip, default = "default_scopes")]
+    /// Luôn là `OAUTH_SCOPES` của bản build đang chạy.
     pub scopes: Vec<String>,
 }
 
@@ -129,23 +130,18 @@ impl Default for OAuthConfig {
 }
 
 impl OAuthConfig {
-    /// Đọc `PEADRIVE_CLIENT_ID` / `PEADRIVE_CLIENT_SECRET` (runtime) hoặc giá trị nhúng lúc build.
-    pub fn from_env() -> Self {
-        let id = std::env::var("PEADRIVE_CLIENT_ID").ok().or_else(|| option_env!("PEADRIVE_CLIENT_ID").map(str::to_string));
-        let secret = std::env::var("PEADRIVE_CLIENT_SECRET")
-            .ok()
-            .or_else(|| option_env!("PEADRIVE_CLIENT_SECRET").map(str::to_string));
-        Self { client_id: id.unwrap_or_default(), client_secret: secret.unwrap_or_default(), ..Self::default() }
+    /// OAuth client nhúng lúc build (xem `build.rs`). Rỗng nếu `.env.<flavor>` thiếu hoặc chưa điền: khi đó đăng nhập
+    /// báo lỗi "chưa nhúng Client ID" (bản phát hành thì `build.rs` đã dừng build từ trước).
+    pub fn builtin() -> Self {
+        Self {
+            client_id: option_env!("PEADRIVE_EMBEDDED_CLIENT_ID").unwrap_or_default().to_string(),
+            client_secret: option_env!("PEADRIVE_EMBEDDED_CLIENT_SECRET").unwrap_or_default().to_string(),
+            ..Self::default()
+        }
     }
 
     pub fn is_configured(&self) -> bool {
         !self.client_id.trim().is_empty()
-    }
-
-    /// Client ID đã được nhúng lúc build (`PEADRIVE_CLIENT_ID`)? Khi đó hộp Cài đặt ẩn ô nhập OAuth: người dùng cuối
-    /// không phải (và không cần) nhập API. Bản build không nhúng (dev) vẫn hiện ô nhập.
-    pub fn embedded() -> bool {
-        option_env!("PEADRIVE_CLIENT_ID").is_some_and(|s| !s.trim().is_empty())
     }
 }
 
@@ -164,6 +160,11 @@ pub fn save_json<T: Serialize>(path: &Path, value: &T) -> std::io::Result<()> {
     std::fs::write(&tmp, serde_json::to_vec_pretty(value).map_err(std::io::Error::other)?)?;
     std::fs::rename(&tmp, path)
 }
+
+/// Bộ đọc `.env.<flavor>` của `build.rs`, nạp lại ở đây (chỉ khi test) để kiểm thử: xem `build_env.rs`.
+#[cfg(test)]
+#[path = "../build_env.rs"]
+mod build_env;
 
 #[cfg(test)]
 mod tests {
@@ -187,17 +188,29 @@ mod tests {
     }
 
     #[test]
-    fn scopes_stored_on_disk_never_override_the_build() {
-        // oauth.json do bản cũ ghi ra có kèm `scopes` KHÁC scope của bản build này: phải bị bỏ qua.
-        let other = if cfg!(feature = "full-drive") { SCOPE_DRIVE_READONLY } else { SCOPE_DRIVE };
-        let old = format!(r#"{{"clientId":"cid","clientSecret":"sec","scopes":["{other}"]}}"#);
-        let cfg: OAuthConfig = serde_json::from_str(&old).unwrap();
-        assert_eq!((cfg.client_id.as_str(), cfg.client_secret.as_str()), ("cid", "sec"));
-        assert_eq!(cfg.scopes, default_scopes());
-        // File thiếu hẳn `scopes` cũng ra đúng scope hiện tại; và không ghi `scopes` ra đĩa nữa.
-        let bare: OAuthConfig = serde_json::from_str(r#"{"clientId":"cid"}"#).unwrap();
-        assert_eq!(bare.scopes, default_scopes());
-        assert!(!serde_json::to_string(&cfg).unwrap().contains("scopes"));
+    fn builtin_client_comes_from_the_flavors_env_file() {
+        // Khớp build.rs: bản `full-drive` đọc `.env.personal`, bản mặc định đọc `.env.public`; không nguồn nào khác.
+        let name = if cfg!(feature = "full-drive") { ".env.personal" } else { ".env.public" };
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(name);
+        let pairs = std::fs::read_to_string(&path).map(|t| build_env::parse(&t)).unwrap_or_default();
+        let want_id = build_env::get(&pairs, "PEADRIVE_CLIENT_ID").unwrap_or("");
+        let want_secret = build_env::get(&pairs, "PEADRIVE_CLIENT_SECRET").unwrap_or("");
+        let got = OAuthConfig::builtin();
+        if want_id.is_empty() || want_secret.is_empty() {
+            assert!(!got.is_configured(), "{name} thiếu/chưa điền thì không được nhúng client nào (kể cả từ biến môi trường)");
+            assert!(got.client_secret.is_empty());
+        } else {
+            assert_eq!((got.client_id.as_str(), got.client_secret.as_str()), (want_id, want_secret), "client nhúng phải là của {name}");
+        }
+        assert_eq!(got.scopes, default_scopes());
+    }
+
+    #[test]
+    fn app_version_is_defined_once_and_matches_tauri_conf() {
+        // `version` của workspace (Cargo.toml) là nguồn chính; tauri.conf.json phải khớp (README: đổi cả hai khi phát hành).
+        let conf = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src-tauri/tauri.conf.json");
+        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(conf).unwrap()).unwrap();
+        assert_eq!(v["version"].as_str(), Some(env!("CARGO_PKG_VERSION")), "version trong tauri.conf.json phải khớp Cargo.toml (workspace)");
     }
 
     #[test]

@@ -3,6 +3,7 @@ resolver = "2"
 members = ["crates/peadrive-core", "src-tauri"]
 
 [workspace.package]
+# 0.0.1 = giai đoạn đang phát triển (chưa phát hành). Khi phát hành: đổi cả `src-tauri/tauri.conf.json` (có test canh lệch).
 version = "0.0.1"
 edition = "2021"
 license = "MIT"
