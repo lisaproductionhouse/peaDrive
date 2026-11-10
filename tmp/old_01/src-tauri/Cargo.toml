@@ -1,0 +1,23 @@
+[package]
+name = "peadrive"
+description = "peaDrive — tải Google Drive tốc độ cao (Rust + Tauri)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+# Chuyển tiếp sang lõi: `cargo tauri build --features full-drive` → bản cá nhân (toàn quyền Drive). Xem docs/FLAVORS.md.
+full-drive = ["peadrive-core/full-drive"]
+
+[lib]
+name = "peadrive_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde_json = "1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+peadrive-core = { path = "../crates/peadrive-core" }

@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>peaDrive</title>
+<script>
+/* Áp theme đã lưu ngay khi tải trang để không bị nháy sáng/tối. Nút đổi theme nằm trong app.js */
+try { document.documentElement.dataset.theme = localStorage.getItem('theme') === 'light' ? 'light' : 'dark'; } catch (e) { document.documentElement.dataset.theme = 'dark'; }
+</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-updown" viewBox="0 0 24 24"><path d="M7 20V4M3 8l4-4 4 4M17 4v16M13 16l4 4 4-4"/></symbol>
+    <symbol id="i-split" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></symbol>
+    <symbol id="i-hdd" viewBox="0 0 24 24"><rect x="3" y="12" width="18" height="8" rx="2"/><path d="M5 12l2.5-7h9L19 12M7 16h.01"/></symbol>
+    <symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/></symbol>
+    <symbol id="i-building" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M9 7h1M14 7h1M9 11h1M14 11h1M9 15h1M14 15h1M10 21v-3h4v3"/></symbol>
+    <symbol id="i-plus-c" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><rect x="9" y="11" width="6" height="5" rx="1"/><path d="M10 11V9.5a2 2 0 0 1 4 0V11"/></symbol>
+    <symbol id="i-chev-d" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+    <symbol id="i-chev-l" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+    <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></symbol>
+    <symbol id="i-pc" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 9.5a4.25 4.25 0 0 1-.5 8.5z"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v16M6 14l6 6 6-6"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 20V4M6 10l6-6 6 6"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.3l2 2.2h8.7A1.5 1.5 0 0 1 21 8.7v9.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z" fill="currentColor" fill-opacity=".22"/></symbol>
+    <symbol id="i-folder-plus" viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.3l2 2.2h8.7A1.5 1.5 0 0 1 21 8.7v9.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5zM12 11v6M9 14h6"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="currentColor" fill-opacity=".15"/><path d="M14 3v5h5"/></symbol>
+    <symbol id="i-img" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="currentColor" fill-opacity=".15"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5.5-5.5L5 20"/></symbol>
+    <symbol id="i-vid" viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="14" rx="2" fill="currentColor" fill-opacity=".15"/><path d="M17 10l4-2.5v9L17 14"/></symbol>
+    <symbol id="i-zip" viewBox="0 0 24 24"><path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="currentColor" fill-opacity=".15"/><path d="M10 3v2M10 7v2M10 11v2M9 15h2v3H9z"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 13h12l1-13M9 7V4h6v3"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor" fill-opacity=".2"/><path d="M8 12.5l2.5 2.5L16 9.5"/></symbol>
+    <symbol id="i-tick" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-sort" viewBox="0 0 24 24"><path d="M4 7h16M7 12h10M10 17h4"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></symbol>
+    <symbol id="i-cursor" viewBox="0 0 24 24"><path d="M5 3l6 16 2.2-6.8L20 10z"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3l10 18H2zM12 10v5M12 18h.01"/></symbol>
+    <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M4 9h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5zM17 10h1.5a2.5 2.5 0 0 1 0 5H17M8 3.5c0 1 1 1 1 2s-1 1-1 2M12 3.5c0 1 1 1 1 2s-1 1-1 2"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/></symbol>
+    <symbol id="i-arrow-r" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5h16l-6 7v6l-4 2v-8z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.15 1 5.85L12 16.9l-5.25 2.8 1-5.85L3.5 9.7l5.9-.9z"/></symbol>
+    <symbol id="i-storage" viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6M4.5 11.5v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6"/></symbol>
+    <symbol id="i-invert" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M20 4v13.5a2.5 2.5 0 0 1-2.5 2.5H4z" fill="currentColor" fill-opacity=".85"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3L5 13.5h6L10 21l8-10.5h-6z"/></symbol>
+  </defs>
+</svg>
+
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-mark"><svg class="i"><use href="#i-updown"/></svg></div>
+    <div class="brand-name">peaDrive</div>
+  </div>
+  <div class="section-label">GOOGLE DRIVE</div>
+  <button class="side-btn" data-loc="my" title="Drive của tôi"><svg class="i"><use href="#i-hdd"/></svg><span>Drive của tôi</span></button>
+  <button class="side-btn" data-loc="shared" title="Được chia sẻ với tôi"><svg class="i"><use href="#i-people"/></svg><span>Được chia sẻ với tôi</span></button>
+  <button class="side-btn" data-loc="starred" title="Có gắn dấu sao"><svg class="i"><use href="#i-star"/></svg><span>Có gắn dấu sao</span></button>
+  <button class="side-btn" data-loc="trash" title="Thùng rác"><svg class="i"><use href="#i-trash"/></svg><span>Thùng rác</span></button>
+  <button class="side-btn" data-loc="storage" title="Bộ nhớ"><svg class="i"><use href="#i-storage"/></svg><span>Bộ nhớ</span></button>
+  <div class="side-quota" id="sideQuota" role="progressbar" aria-label="Dung lượng Drive" aria-valuemin="0" aria-valuemax="100" hidden>
+    <div class="bar"><i id="sideQuotaFill"></i></div>
+    <small id="sideQuotaText"></small>
+  </div>
+  <button class="side-btn" data-loc="team"><svg class="i"><use href="#i-building"/></svg><span>Bộ nhớ dùng chung</span></button>
+  <button class="side-btn" id="sideTransfers" style="margin-top:10px" title="Hàng đợi"><svg class="i"><use href="#i-updown"/></svg><span>Hàng đợi</span><em class="badge" id="transferBadge" hidden></em></button>
+  <div class="side-spacer"></div>
+  <div class="side-foot"><button class="coffee-btn" id="btnCoffee" title="Ủng hộ người làm peaDrive, hoàn toàn tuỳ tâm"><svg class="i"><use href="#i-coffee"/></svg>Gửi 1 ly cà phê</button><button id="sideVersion" title="Thông tin ứng dụng" style="font-family:var(--mono)">v—</button></div>
+</aside>
+
+<main class="main">
+
+  <section class="workspace">
+    <div class="toolbar">
+      <button class="account" id="accountBtn" title="Đăng nhập Google Drive" aria-haspopup="menu" aria-expanded="false">
+        <span class="dot"></span><b id="accEmail">Kết nối Google Drive</b><svg class="i"><use href="#i-chev-d"/></svg>
+      </button>
+      <button class="tb-btn" id="btnLink" disabled title="Dán link file hoặc thư mục Google Drive để tải về máy (Ctrl+L)"><svg class="i"><use href="#i-link"/></svg>Tải từ link Drive</button>
+      <button class="tb-btn" id="btnMkdir" disabled><svg class="i"><use href="#i-folder-plus"/></svg>Thư mục mới</button>
+      <button class="tb-btn" id="btnDownload" disabled><svg class="i"><use href="#i-down"/></svg>Tải xuống</button>
+      <button class="tb-btn" id="btnSmartUpload" disabled title="Chọn một thư mục bên khung Máy của tôi để dùng Smart Upload"><svg class="i"><use href="#i-bolt"/></svg>Smart Upload</button>
+      <button class="primary" id="btnUpload" disabled><svg class="i"><use href="#i-up"/></svg>Tải lên</button>
+      <span class="tb-sep"></span>
+      <label class="lang-dd" title="Ngôn ngữ">
+        <svg class="i"><use href="#i-globe"/></svg>
+        <select id="uiLang" name="uiLang" aria-label="Ngôn ngữ">
+          <option value="vi" selected>VI</option>
+          <option value="en">EN</option>
+          <option value="zh">ZH</option>
+        </select>
+      </label>
+      <button class="icon-btn theme-btn" id="themeToggle" type="button" aria-label="Chuyển giao diện sáng/tối" title="Sáng / Tối"><svg class="i ic-sun"><use href="#i-sun"/></svg><svg class="i ic-moon"><use href="#i-moon"/></svg></button>
+      <button class="icon-btn settings-btn" id="btnSettings" type="button" aria-label="Cài đặt" title="Cài đặt (Ctrl/⌘ + ,)"><svg class="i"><use href="#i-gear"/></svg></button>
+    </div>
+
+    <div class="panes">
+      <!-- Máy tính -->
+      <div class="pane" id="localPane" title="">
+        <div class="pane-head">
+          <div class="pane-icon local" title="Máy của tôi"><svg class="i"><use href="#i-pc"/></svg></div>
+          <div class="grow"><h3>Máy của tôi</h3><button class="chip" id="btnThisPC" title="Xem tất cả ổ đĩa và thư mục nhanh"><svg class="i"><use href="#i-hdd"/></svg>Ổ đĩa</button></div>
+          <button class="sort-btn" id="sortLocal" title="Sắp xếp"></button>
+          <button class="icon-btn" id="btnLocalRefresh" title="Làm mới"><svg class="i"><use href="#i-refresh"/></svg></button>
+          <input type="file" id="localFilterTxtFile" class="sr-only" accept=".txt,text/plain">
+          <label class="tb-btn filter-btn" for="localFilterTxtFile" title="Nhập danh sách từ file .txt"><svg class="i"><use href="#i-filter"/></svg>Nhập danh sách</label>
+        </div>
+        <div class="crumbs" id="localCrumbs"></div>
+        <label class="search"><svg class="i"><use href="#i-search"/></svg><input id="localSearch" placeholder="Tìm trong thư mục"></label>
+        <div class="list-head" data-side="local"><span><button type="button" class="icon-btn sel-toggle" id="selToggleLocal" data-side="local" title="Chọn tất cả" aria-label="Chọn tất cả" disabled><svg class="i"><use href="#i-invert"/></svg></button></span><span data-sort="name">Tên</span><span data-sort="modified">Ngày sửa</span><span data-sort="size">Dung lượng</span></div>
+        <div class="list" id="localList" tabindex="0"></div>
+        <div class="pane-foot"><span id="localFootL">—</span><span id="localFootR"></span></div>
+      </div>
+
+      <!-- Google Drive -->
+      <div class="pane" id="drivePane">
+        <input type="radio" name="driveMode" id="modeMy" value="my" class="sr-only" checked>
+        <input type="radio" name="driveMode" id="modeLink" value="link" class="sr-only">
+        <div class="pane-head">
+          <div class="grow">
+            <div class="mode-switch" role="group" aria-label="Chế độ Google Drive">
+              <div class="pane-icon cloud"><svg class="i"><use href="#i-cloud"/></svg></div>
+              <label for="modeMy" title="Google Drive">My Drive</label>
+              <label for="modeLink" title="Link Drive">Link Drive</label>
+            </div>
+            <label class="mode-field"><svg class="i"><use href="#i-link"/></svg><input type="url" id="driveLinkInput" placeholder="Dán link Google Drive" autocomplete="off" spellcheck="false"><button type="button" class="link-go" id="driveLinkGo" title="Mở link (Enter)" aria-label="Mở link"><svg class="i"><use href="#i-arrow-r"/></svg></button></label>
+          </div>
+          <button class="sort-btn" id="sortDrive" title="Sắp xếp" disabled></button>
+          <button class="icon-btn" id="btnDriveRefresh" title="Làm mới Google Drive" disabled><svg class="i"><use href="#i-refresh"/></svg></button>
+          <input type="file" id="filterTxtFile" class="sr-only" accept=".txt,text/plain">
+          <label class="tb-btn filter-btn" for="filterTxtFile" title="Nhập danh sách từ file .txt"><svg class="i"><use href="#i-filter"/></svg>Nhập danh sách</label>
+        </div>
+        <div class="crumbs" id="driveCrumbs"></div>
+        <label class="search"><svg class="i"><use href="#i-search"/></svg><input id="driveSearch" placeholder="Tìm trong thư mục" disabled></label>
+        <div class="list-head" data-side="drive"><span><button type="button" class="icon-btn sel-toggle" id="selToggleDrive" data-side="drive" title="Chọn tất cả" aria-label="Chọn tất cả" disabled><svg class="i"><use href="#i-invert"/></svg></button></span><span data-sort="name">Tên</span><span data-sort="modified">Ngày sửa</span><span data-sort="size">Dung lượng</span></div>
+        <div class="list" id="driveList" tabindex="0"></div>
+        <div class="pane-foot"><span id="driveFootL">—</span><span id="driveFootR"></span></div>
+      </div>
+    </div>
+
+  </section>
+
+  <section class="queue hidden" id="queue">
+    <div class="q-resize" id="qResize" title="Kéo lên hoặc xuống để đổi chiều cao hàng đợi"></div>
+    <div class="q-top">
+      <svg class="i" style="color:var(--accent)"><use href="#i-updown"/></svg>
+      <b>Hàng đợi</b>
+      <span class="mono" id="qSummary"></span>
+      <span class="sp"></span>
+      <button id="qSmart" class="q-smart" hidden title="Các thư mục đang được Smart Upload theo dõi"><svg class="i"><use href="#i-bolt"/></svg><span id="qSmartN"></span></button>
+      <label title="Mở app sau khi tắt máy hoặc app văng: tự chạy tiếp các tác vụ chưa xong"><input type="checkbox" id="qAuto">Tự tiếp tục khi mở app</label>
+      <button id="qPause">Tạm dừng tất cả</button>
+      <button id="qCancelAll">Huỷ tất cả</button>
+      <button id="qClear">Xoá đã xong</button>
+      <button id="qHide" title="Ẩn hàng đợi"><svg class="i"><use href="#i-chev-d"/></svg></button>
+    </div>
+    <div class="q-cols"><span>Thao tác</span><span>Nguồn</span><span class="wide">Đích</span><span>Trạng thái</span><span class="wide">Dung lượng</span><span>Tiến độ</span><span>Tốc độ</span><span class="wide">Còn lại</span><span></span></div>
+    <div class="q-list" id="qList"></div>
+  </section>
+
+  <div class="update-bar" id="updateBar" hidden>
+    <svg class="i"><use href="#i-down"/></svg>
+    <b id="updTitle"></b><span class="muted" id="updCurrent"></span>
+    <button class="link" id="updNotes">Xem có gì mới</button>
+    <span class="sp"></span>
+    <button class="muted" id="updSkip">Bỏ qua bản này</button>
+    <button class="muted" id="updLater">Để sau</button>
+    <button class="primary small" id="updGet"><svg class="i"><use href="#i-down"/></svg>Tải về</button>
+  </div>
+
+  <footer class="statusbar">
+    <span id="sbQuota"></span>
+    <span class="sp"></span>
+    <span id="sbText"></span>
+    <button id="sbShowQueue" style="margin-left:10px">Hiện hàng đợi</button>
+    <span class="dot ready" id="sbDot" role="img" aria-label="Sẵn sàng" title="Sẵn sàng"></span>
+  </footer>
+</main>
+
+<div class="toast hide" id="toast"><svg class="i"><use href="#i-check"/></svg><span id="toastText"></span></div>
+
+<script src="app.js"></script>
+</body>
+</html>

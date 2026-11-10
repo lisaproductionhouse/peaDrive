@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Quyền của cửa sổ chính peaDrive (lệnh `api` của ứng dụng được phép mặc định)",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

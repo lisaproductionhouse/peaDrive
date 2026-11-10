@@ -1,4 +1,5 @@
 /target
+/tpm
 /src-tauri/gen
 *.part
 *.peadrive
