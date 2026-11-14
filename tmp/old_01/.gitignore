@@ -1,5 +1,0 @@
-/target
-/src-tauri/gen
-*.part
-*.peadrive
-.DS_Store

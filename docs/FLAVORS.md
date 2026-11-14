@@ -45,7 +45,7 @@ cargo tauri build --features full-drive --config src-tauri/tauri.personal.conf.j
 
 ## CI (`.github/workflows/build.yml`)
 
-Test chạy cho cả hai flavor (không cần file `.env`); bundle Windows + macOS cho cả hai flavor. Job bundle ghi secret của flavor vào `.env.<flavor>` rồi mới build, và **dừng với lỗi rõ ràng** nếu thiếu secret (không lặng lẽ dùng nhầm client của flavor kia). Cần bốn secret của repo:
+Test chạy cho cả hai flavor trên Ubuntu (không cần file `.env`), cộng một job Windows chạy riêng test của `local.rs` (đọc dung lượng ổ bằng API Windows, không kiểm thử được trên Ubuntu); bundle Windows + macOS cho cả hai flavor. Job bundle ghi secret của flavor vào `.env.<flavor>` rồi mới build, và **dừng với lỗi rõ ràng** nếu thiếu secret (không lặng lẽ dùng nhầm client của flavor kia). Cần bốn secret của repo:
 
 | Secret | Dùng cho |
 |---|---|

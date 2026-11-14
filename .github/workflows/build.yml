@@ -13,19 +13,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        flavor: [public, personal]
-    runs-on: ubuntu-latest
+        include:
+          - { os: ubuntu-latest,  flavor: public,   args: "" }
+          - { os: ubuntu-latest,  flavor: personal, args: "--features full-drive" }
+          # Mã liệt kê ổ đĩa dùng API Windows (GetLogicalDrives / GetDiskFreeSpaceExW): Ubuntu không chạy được nên cần runner Windows.
+          - { os: windows-latest, flavor: public,   args: "--lib local::" }
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: cargo test (${{ matrix.flavor }})
-        run: cargo test -p peadrive-core ${{ matrix.flavor == 'personal' && '--features full-drive' || '' }}
+      - name: cargo test (${{ matrix.os }}, ${{ matrix.flavor }})
+        run: cargo test -p peadrive-core ${{ matrix.args }}
       - uses: actions/setup-node@v4
-        if: matrix.flavor == 'public'
+        if: matrix.os == 'ubuntu-latest' && matrix.flavor == 'public'
         with: { node-version: 22 }
       - name: Thử giao diện (jsdom; không phụ thuộc flavor)
-        if: matrix.flavor == 'public'
+        if: matrix.os == 'ubuntu-latest' && matrix.flavor == 'public'
         run: npm ci && npm test
         working-directory: tools/ui-smoke
 

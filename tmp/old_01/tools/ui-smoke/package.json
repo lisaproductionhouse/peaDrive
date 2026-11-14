@@ -1,8 +1,0 @@
-{
-  "name": "peadrive-ui-smoke",
-  "private": true,
-  "type": "module",
-  "description": "Thử giao diện index.html + bridge.js trong jsdom với JSON thật do Rust (Api) sinh ra",
-  "scripts": { "test": "node smoke.mjs" },
-  "devDependencies": { "jsdom": "^26.0.0" }
-}

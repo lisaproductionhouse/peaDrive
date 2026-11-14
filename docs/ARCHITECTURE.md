@@ -177,7 +177,7 @@ Giao diện (`ui/index.html` + `style.css` + `app.js`) chỉ biết `fetch('/api
 | `drive/link?link=` | phân giải link người dùng dán (file/thư mục, kể cả `resourcekey`) cho **Link Mode** |
 | `drive/list?location=&folder_id=&rk=` | `link` (nội dung một link, kèm resourcekey) · `my` · `shared` · `starred` · `trash` · `storage` (file của tôi theo dung lượng giảm dần, tối đa 500) · `team` (Shared Drive); ID khác = thư mục con (trong `trash` không lọc `trashed`) |
 | `drive/mkdir`, `rename`, `delete`, `share` | Drive API (xoá thường = vào thùng rác; `permanent` = xoá vĩnh viễn; `share` = "ai có link đều xem") |
-| `local/list`, `local/reveal` | `local.rs`; trang `::drives` = nơi thường dùng + ổ đĩa |
+| `local/list`, `local/reveal` | `local.rs`; trang `::drives` = nơi thường dùng + ổ đĩa; dung lượng ổ trên Windows đọc thẳng bằng `GetDiskFreeSpaceExW` (không qua `fs4`, vì `fs4` gọi `GetVolumePathNameW` trước và hàm đó lỗi trên ổ RAM disk ImDisk) |
 | `transfer/download`, `transfer/link` | `Manager::enqueue` (thư mục → mở rộng đệ quy thành từng file) |
 | `transfer/queue` | job (tải xuống **và** tải lên, theo `direction`) → `waiting/working/paused/restored/held/completed/skipped/failed/cancelled`; pha đặc biệt (copy dự phòng, MD5) hiện qua `error_msg`; `smart` = số thư mục Smart Upload đang theo dõi; `ready` / `ready_reason` (`not_signed_in` \| `offline`) = trạng thái cho chấm ở thanh dưới: đã đăng nhập + liên lạc được với Google (`DriveClient::reachable`). `/api/status` cũng có hai trường này |
 | `transfer/pause|resume|cancel|retry|clear`, `session` | tạm dừng chung, huỷ tất cả, thử lại, dọn danh sách; phiên khôi phục: `resume` / `discard` / `later` / `auto_on|off` |

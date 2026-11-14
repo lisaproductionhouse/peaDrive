@@ -1,6 +1,6 @@
 /target
-/tmp
 /src-tauri/gen
+/tmp
 *.part
 *.peadrive
 .DS_Store
