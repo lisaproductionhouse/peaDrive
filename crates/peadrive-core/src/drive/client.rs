@@ -25,6 +25,11 @@ shortcutDetails(targetId,targetMimeType,targetResourceKey),isAppAuthorized";
 const HEADER_TIMEOUT: Duration = Duration::from_secs(30);
 const UA: &str = concat!("peaDrive/", env!("CARGO_PKG_VERSION"));
 pub const TEMP_FOLDER: &str = "peaDrive Temp";
+/// Chỉ những trường cần để leo cây thư mục khi định vị một link trong "Drive của tôi": nhẹ hơn nhiều so với `FILE_FIELDS`.
+const LOCATE_FIELDS: &str = "id,name,mimeType,parents,driveId,trashed";
+/// Tổng thời gian tối đa cho việc leo cây; quá hạn thì coi như "không xác định được" và link được xử lý như thường.
+const LOCATE_BUDGET: Duration = Duration::from_secs(8);
+const LOCATE_MAX_DEPTH: usize = 64;
 /// Hậu tố của thư mục peaDrive tự tạo khi thư mục trùng tên của người dùng không ghi vào được (quyền `drive.file`).
 pub const OWN_FOLDER_SUFFIX: &str = " (peaDrive)";
 
@@ -85,6 +90,29 @@ struct UserResp {
 struct QuotaResp {
     limit: Option<String>,
     usage: Option<String>,
+}
+
+/// Vị trí của một mục trong "Drive của tôi" của tài khoản đang dùng — xem [`DriveClient::locate_in_my_drive`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MyDriveSpot {
+    /// Các thư mục từ con của gốc "Drive của tôi" xuống tới thư mục cần mở, mỗi phần tử là (id, tên). Mục là THƯ MỤC thì
+    /// danh sách kết thúc bằng chính nó; mục là TỆP thì kết thúc ở thư mục chứa nó (rỗng nếu tệp nằm ngay ở gốc).
+    pub folders: Vec<(String, String)>,
+    pub is_folder: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Ancestor {
+    id: String,
+    name: String,
+    #[serde(default)]
+    mime_type: String,
+    #[serde(default)]
+    parents: Vec<String>,
+    drive_id: Option<String>,
+    #[serde(default)]
+    trashed: bool,
 }
 
 fn with_key(rb: RequestBuilder, id: &str, key: Option<&str>) -> RequestBuilder {
@@ -255,6 +283,58 @@ impl DriveClient {
             self.json(resp).await
         })
         .await
+    }
+
+    async fn locate_meta(&self, id: &str, key: Option<&str>) -> Result<Ancestor> {
+        self.retrying(|| async {
+            let url = format!("{}/files/{}", self.base, id);
+            let resp = self
+                .send(&self.api, |c| with_key(c.get(&url).query(&[("fields", LOCATE_FIELDS), ("supportsAllDrives", "true")]), id, key))
+                .await?;
+            self.json(resp).await
+        })
+        .await
+    }
+
+    /// Mục `r` có nằm trong cây "Drive của tôi" của tài khoản đang dùng không? Leo từng cấp theo `parents` cho tới khi gặp gốc
+    /// "Drive của tôi" (`files/root`). Trả `None` — để link được xử lý như link ngoài — khi: mục thuộc Shared Drive hoặc đã vào
+    /// thùng rác; chuỗi cha đứt (không có cha, vd. mục "được chia sẻ với tôi") hoặc không đọc được cha (chủ sở hữu khác, không có
+    /// quyền); gặp lỗi mạng/API; hoặc quá `LOCATE_BUDGET`. Không bao giờ trả lỗi: đây chỉ là gợi ý tiện lợi, link vẫn mở được
+    /// bằng Link Mode như bình thường.
+    pub async fn locate_in_my_drive(&self, r: &DriveRef) -> Option<MyDriveSpot> {
+        tokio::time::timeout(LOCATE_BUDGET, self.locate_walk(r)).await.ok().flatten()
+    }
+
+    async fn locate_walk(&self, r: &DriveRef) -> Option<MyDriveSpot> {
+        // Gốc "Drive của tôi" và chính mục cần tìm được hỏi song song để đỡ một lượt chờ.
+        let (root, first) = tokio::join!(self.locate_meta("root", None), self.locate_meta(&r.id, r.resource_key.as_deref()));
+        let (root, mut cur) = (root.ok()?, first.ok()?);
+        if cur.drive_id.is_some() || cur.trashed {
+            return None;
+        }
+        let is_folder = cur.mime_type == FOLDER_MIME;
+        if cur.id == root.id {
+            return Some(MyDriveSpot { folders: Vec::new(), is_folder: true });
+        }
+        let target = (cur.id.clone(), cur.name.clone());
+        let mut up: Vec<(String, String)> = Vec::new(); // tổ tiên: từ cha gần nhất lên cao dần
+        for _ in 0..LOCATE_MAX_DEPTH {
+            let parent = cur.parents.first()?.clone();
+            if parent == root.id {
+                up.reverse();
+                if is_folder {
+                    up.push(target);
+                }
+                return Some(MyDriveSpot { folders: up, is_folder });
+            }
+            let p = self.locate_meta(&parent, None).await.ok()?;
+            if p.drive_id.is_some() {
+                return None;
+            }
+            up.push((p.id.clone(), p.name.clone()));
+            cur = p;
+        }
+        None
     }
 
     /// Liệt kê toàn bộ con trực tiếp của một thư mục (tự phân trang).

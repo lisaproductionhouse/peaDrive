@@ -337,20 +337,22 @@ async function loadLocal(path = S.local.path) {
 function renderLocalCrumbs() {
   const el = $('localCrumbs');
   const p = S.local.path;
-  let html = `<button class="back" title="Lên thư mục cha" ${p === '::drives' ? 'disabled' : ''}>${icon('chev-l')}</button>`;
-  html += `<button class="crumb${p === '::drives' ? ' cur' : ''}" data-path="::drives">${icon('pc')}Máy tính</button>`;
+  // Nút Back nằm NGOÀI vùng cuộn `.trail`: đường dẫn dài chỉ cuộn phần breadcrumb, không đẩy/che nút Back.
+  let html = `<button class="back" title="Lên thư mục cha" ${p === '::drives' ? 'disabled' : ''}>${icon('chev-l')}</button><div class="trail">`;
+  html += `<button class="crumb${p === '::drives' ? ' cur' : ''}" data-path="::drives">${icon('pc')}<span class="nm">Máy tính</span></button>`;
   if (p !== '::drives') {
     const parts = p.split(/[\\/]/).filter(Boolean);
     let acc = '';
     parts.forEach((part, i) => {
       acc = i === 0 ? (part.endsWith(':') ? part + '\\' : '/' + part) : acc.replace(/[\\/]$/, '') + '\\' + part;
-      html += `<span class="crumb-sep">${icon('chev-r')}</span><button class="crumb${i === parts.length - 1 ? ' cur' : ''}" data-path="${esc(acc)}">${esc(part)}</button>`;
+      html += `<span class="crumb-sep">${icon('chev-r')}</span><button class="crumb${i === parts.length - 1 ? ' cur' : ''}" data-path="${esc(acc)}" title="${esc(part)}"><span class="nm">${esc(part)}</span></button>`;
     });
   }
-  el.innerHTML = html;
+  el.innerHTML = html + '</div>';
   el.querySelector('.back').onclick = () => S.local.parent && loadLocal(S.local.parent);
   el.querySelectorAll('.crumb').forEach(c => c.onclick = () => loadLocal(c.dataset.path));
-  el.scrollLeft = el.scrollWidth;
+  const trail = el.querySelector('.trail');
+  trail.scrollLeft = trail.scrollWidth; // luôn thấy thư mục hiện tại ở cuối
 }
 
 /* ---------------- Google Drive ---------------- */
@@ -371,6 +373,7 @@ async function loadDrive(keepSelection = false) {
   if (!keepSelection) { S.drive.sel.clear(); S.drive.anchor = null; }
   renderDriveCrumbs();
   if (!keepSelection) { S.drive.items = []; renderList('drive'); }
+  let revealed = null;
   try {
     let items;
     if (S.mode === 'link' && S.drive.linkRoot && !S.drive.linkRoot.is_dir) items = [S.drive.linkRoot];   // link tới MỘT file: chỉ hiện file đó
@@ -378,6 +381,8 @@ async function loadDrive(keepSelection = false) {
     if (my !== driveReq) return;
     S.drive.items = items;
     const keys = new Set(S.drive.items.map(i => i.id)); [...S.drive.sel].forEach(k => keys.has(k) || S.drive.sel.delete(k));
+    const pick = S.drive.reveal; S.drive.reveal = null;   // mở từ link tệp: chọn đúng tệp đó
+    if (pick && keys.has(pick)) { S.drive.sel = new Set([pick]); S.drive.anchor = pick; revealed = pick; }
   } catch (e) {
     if (my !== driveReq) return;
     S.drive.error = e.message; S.drive.items = [];
@@ -385,6 +390,7 @@ async function loadDrive(keepSelection = false) {
   }
   S.drive.loading = false;
   renderList('drive');
+  if (revealed) [...document.querySelectorAll('#driveList .row')].find(r => r.dataset.key === revealed)?.scrollIntoView({ block: 'center' });
 }
 
 function renderDriveCrumbs() {
@@ -392,13 +398,14 @@ function renderDriveCrumbs() {
   const c = S.drive.crumbs;
   const linkRoot = S.mode === 'link' ? S.drive.linkRoot : null;
   const locIcon = linkRoot ? 'link' : { my: 'hdd', shared: 'people', team: 'building', starred: 'star', trash: 'trash', storage: 'storage' }[S.location];
-  let html = `<button class="back" title="Quay lại thư mục trước" ${c.length ? '' : 'disabled'}>${icon('chev-l')}</button>`;
-  html += `<button class="crumb${c.length ? '' : ' cur'}" data-i="-1">${icon(locIcon)}${linkRoot ? esc(linkRoot.name) : LOCATIONS[S.location]}</button>`;
-  c.forEach((cr, i) => html += `<span class="crumb-sep">${icon('chev-r')}</span><button class="crumb${i === c.length - 1 ? ' cur' : ''}" data-i="${i}">${esc(cr.name)}</button>`);
-  el.innerHTML = html;
+  let html = `<button class="back" title="Quay lại thư mục trước" ${c.length ? '' : 'disabled'}>${icon('chev-l')}</button><div class="trail">`;
+  html += `<button class="crumb${c.length ? '' : ' cur'}" data-i="-1">${icon(locIcon)}<span class="nm">${linkRoot ? esc(linkRoot.name) : LOCATIONS[S.location]}</span></button>`;
+  c.forEach((cr, i) => html += `<span class="crumb-sep">${icon('chev-r')}</span><button class="crumb${i === c.length - 1 ? ' cur' : ''}" data-i="${i}" title="${esc(cr.name)}"><span class="nm">${esc(cr.name)}</span></button>`);
+  el.innerHTML = html + '</div>';
   el.querySelector('.back').onclick = () => { if (c.length) { c.pop(); S.drive.search = ''; $('driveSearch').value = ''; loadDrive(); } };
   el.querySelectorAll('.crumb').forEach(b => b.onclick = () => { S.drive.crumbs = c.slice(0, +b.dataset.i + 1); S.drive.search = ''; $('driveSearch').value = ''; loadDrive(); });
-  el.scrollLeft = el.scrollWidth;
+  const trail = el.querySelector('.trail');
+  trail.scrollLeft = trail.scrollWidth; // luôn thấy thư mục hiện tại ở cuối
   document.querySelectorAll('.side-btn[data-loc]').forEach(b => b.classList.toggle('active', S.connected && S.mode !== 'link' && b.dataset.loc === S.location));
 }
 
@@ -940,7 +947,7 @@ $('qAuto').onchange = e => api('/api/session?action=' + (e.target.checked ? 'aut
 const DRIVE_LINK = /(drive|docs)\.google\.com\/\S+|^[\w-]{25,60}$/;
 // Link Mode: dán link rồi bấm truy cập → TOÀN BỘ khung Drive hiển thị nội dung của link (file hoặc thư mục), tách hẳn khỏi
 // Drive của tôi. Chọn mục rồi tải bằng nút Tải xuống hoặc kéo sang khung "Máy của bạn". Chọn lại "Drive của tôi" để quay về.
-function freshDrive(sort) { return { crumbs: [], items: [], sel: new Set(), anchor: null, search: '', loading: false, error: '', sort, linkRoot: null }; }
+function freshDrive(sort) { return { crumbs: [], items: [], sel: new Set(), anchor: null, search: '', loading: false, error: '', sort, linkRoot: null, reveal: null }; }
 function setModeRadios() { $('modeLink').checked = S.mode === 'link'; $('modeMy').checked = S.mode !== 'link'; }
 
 async function enterLinkMode(text) {
@@ -949,6 +956,7 @@ async function enterLinkMode(text) {
   go.disabled = true;
   try {
     const root = await api('/api/drive/link?link=' + encodeURIComponent(text));   // phân giải link; lỗi → ở nguyên chế độ hiện tại
+    if (root.my_drive) return openInMyDrive(root.my_drive);   // link nằm trong Drive của tôi (tài khoản đang đăng nhập): mở thẳng vị trí đó
     if (S.mode !== 'link') S.myState = { location: S.location, drive: S.drive };   // cất Drive của tôi để quay lại
     S.mode = 'link'; S.location = 'link';
     S.drive = freshDrive(S.drive.sort); S.drive.linkRoot = root;
@@ -968,6 +976,20 @@ function exitLinkMode(silent) {
   $('driveSearch').value = S.drive.search || '';
   setModeRadios();
   if (!silent) loadDrive();
+}
+
+/* Link trỏ tới thư mục/tệp nằm trong Drive của tôi của tài khoản đang đăng nhập (backend báo `my_drive`): thay vì Link Mode,
+   chuyển sang Drive của tôi và mở thẳng vị trí đó — link thư mục → mở thư mục; link tệp → mở thư mục chứa rồi chọn tệp. */
+function openInMyDrive(spot) {
+  S.myState = null;   // đang ở Link Mode thì bỏ trạng thái đã cất: ta mở một vị trí mới trong Drive của tôi
+  S.mode = 'my'; S.location = 'my';
+  S.drive = freshDrive(S.drive.sort);
+  S.drive.crumbs = spot.crumbs.map(c => ({ id: c.id, name: c.name, rk: '' }));
+  S.drive.reveal = spot.select || null;
+  $('driveSearch').value = ''; $('driveLinkInput').value = '';
+  setModeRadios();
+  toast('Link này nằm trong Drive của tôi — đã mở đúng vị trí');
+  loadDrive();
 }
 
 // Hiện ô dán link (và điền sẵn nếu có); go = true thì truy cập luôn (thả link vào khung).
@@ -1432,6 +1454,7 @@ Thôi khỏi đi|No thanks|不用了
 OK luôn|Sure!|好的！
 Đã sao chép số tài khoản|Account number copied|已复制账号
 Đang tải bản mới trong trình duyệt|Downloading the new version in your browser|正在浏览器中下载新版本
+Link này nằm trong Drive của tôi — đã mở đúng vị trí|This link is in My Drive — opened at its location|该链接位于“我的云端硬盘”中，已打开对应位置
 peaDrive {} có gì mới|What's new in peaDrive {}|peaDrive {} 更新内容
 Mở thư mục|Open folder|打开文件夹
 Tải {} mục lên Google Drive|Upload {} items to Google Drive|将 {} 项上传到 Google Drive

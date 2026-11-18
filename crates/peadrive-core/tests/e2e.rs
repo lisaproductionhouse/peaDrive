@@ -69,6 +69,8 @@ struct Mock {
     shared: Mutex<Vec<String>>,
     /// Chuỗi `scope` mà endpoint token giả trả về (None = không có trường này, như các test cũ).
     token_scope: Mutex<Option<String>>,
+    /// true = `files/root` trả 403 (kiểm thử: định vị link trong Drive của tôi là best-effort, không làm hỏng link).
+    root_fails: AtomicBool,
 }
 
 impl Mock {
@@ -83,7 +85,36 @@ impl Mock {
         Arc::new(Mock { md5: hex(&h.finalize()), ..Default::default() })
     }
 
+    /// Cây giả cho các test định vị link trong "Drive của tôi" (`files/root` → MYROOT): tên, mime, cha, thuộc tính thêm.
+    fn tree_meta(&self, id: &str) -> Option<Resp> {
+        const FOLDER: &str = "application/vnd.google-apps.folder";
+        let err404 = || Some(Resp::Json(404, r#"{"error":{"code":404,"message":"File not found"}}"#.into()));
+        let (name, mime, parents, extra) = match id {
+            "root" if self.root_fails.load(Ordering::SeqCst) => return Some(Resp::Json(403, r#"{"error":{"code":403,"message":"forbidden"}}"#.into())),
+            "root" => ("My Drive", FOLDER, "", ""),
+            "MYFOLDER_A_1234567890" => ("Ảnh", FOLDER, r#"["MYROOT_1234567890"]"#, ""),
+            "MYFOLDER_B_1234567890" => ("2026", FOLDER, r#"["MYFOLDER_A_1234567890"]"#, ""),
+            "MYFILE_1234567890" => ("anh.jpg", "image/jpeg", r#"["MYFOLDER_B_1234567890"]"#, ""),
+            "MYROOTFILE_1234567890" => ("ghi-chu.txt", "text/plain", r#"["MYROOT_1234567890"]"#, ""),
+            "SHAREDFOLDER_1234567890" => ("Của người khác", FOLDER, "", ""),
+            "SHAREDFILE_1234567890" => ("chia-se.pdf", "application/pdf", r#"["OTHERSFOLDER_1234567890"]"#, ""),
+            "TEAMFILE_1234567890" => ("nhom.pdf", "application/pdf", r#"["TEAMROOT_1234567890"]"#, r#","driveId":"TEAM1_1234567890""#),
+            "TRASHED_1234567890" => ("da-xoa.txt", "text/plain", r#"["MYROOT_1234567890"]"#, r#","trashed":true"#),
+            "OTHERSFOLDER_1234567890" => return err404(),
+            _ => return None,
+        };
+        let real = if id == "root" { "MYROOT_1234567890" } else { id };
+        let parents = if parents.is_empty() { String::new() } else { format!(r#","parents":{parents}"#) };
+        Some(Resp::Json(
+            200,
+            format!(r#"{{"id":"{real}","name":"{name}","mimeType":"{mime}"{parents}{extra},"modifiedTime":"2026-01-01T00:00:00Z"}}"#),
+        ))
+    }
+
     fn meta(&self, id: &str, rk: Option<&str>) -> Resp {
+        if let Some(r) = self.tree_meta(id) {
+            return r;
+        }
         let rk_json = rk.map(|k| format!(r#","resourceKey":"{k}""#)).unwrap_or_default();
         if id.starts_with("LINKFOLDER") {
             return Resp::Json(
@@ -1067,6 +1098,61 @@ async fn account_without_tokens_asks_for_relogin() {
     assert!(matches!(auth.token_for("x@example.com").await, Err(peadrive_core::Error::NotSignedIn)));
 }
 
+/// Link trỏ tới mục nằm trong "Drive của tôi" của tài khoản đang dùng: backend báo vị trí để giao diện mở thẳng tới đó.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn link_inside_my_drive_reports_where_to_open_it() {
+    let h = harness(true, true).await;
+    let api = &h.api;
+    let folder_link = |id: &str| format!("/api/drive/link?link={}", enc(&format!("https://drive.google.com/drive/folders/{id}")));
+    let file_link = |id: &str| format!("/api/drive/link?link={}", enc(&format!("https://drive.google.com/file/d/{id}/view?usp=sharing")));
+    let crumb_names = |v: &serde_json::Value| -> Vec<String> {
+        v["my_drive"]["crumbs"].as_array().unwrap().iter().map(|c| c["name"].as_str().unwrap().to_string()).collect()
+    };
+
+    // Thư mục sâu hai cấp: mở thẳng thư mục đó (Ảnh › 2026), không chọn mục nào.
+    let v = api.call("GET", &folder_link("MYFOLDER_B_1234567890"), None).await.unwrap();
+    assert_eq!(crumb_names(&v), ["Ảnh", "2026"]);
+    assert_eq!(v["my_drive"]["crumbs"][1]["id"], "MYFOLDER_B_1234567890");
+    assert!(v["my_drive"]["select"].is_null());
+    assert_eq!(v["name"], "2026", "phần phân giải link vẫn như cũ");
+
+    // Tệp trong thư mục sâu: mở thư mục chứa nó rồi chọn tệp.
+    let v = api.call("GET", &file_link("MYFILE_1234567890"), None).await.unwrap();
+    assert_eq!(crumb_names(&v), ["Ảnh", "2026"]);
+    assert_eq!(v["my_drive"]["select"], "MYFILE_1234567890");
+
+    // Thư mục nằm ngay ở gốc; tệp nằm ngay ở gốc (không có breadcrumb, vẫn chọn tệp).
+    let v = api.call("GET", &folder_link("MYFOLDER_A_1234567890"), None).await.unwrap();
+    assert_eq!(crumb_names(&v), ["Ảnh"]);
+    let v = api.call("GET", &file_link("MYROOTFILE_1234567890"), None).await.unwrap();
+    assert!(v["my_drive"]["crumbs"].as_array().unwrap().is_empty());
+    assert_eq!(v["my_drive"]["select"], "MYROOTFILE_1234567890");
+}
+
+/// Mọi trường hợp KHÔNG chắc chắn thuộc Drive của tôi đều giữ cơ chế link cũ: link vẫn phân giải được, chỉ không có `my_drive`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn link_outside_my_drive_keeps_the_regular_link_flow() {
+    let h = harness(true, true).await;
+    let api = &h.api;
+    let folder_link = |id: &str| format!("/api/drive/link?link={}", enc(&format!("https://drive.google.com/drive/folders/{id}")));
+    let file_link = |id: &str| format!("/api/drive/link?link={}", enc(&format!("https://drive.google.com/file/d/{id}/view?usp=sharing")));
+    for (what, link, name) in [
+        ("mục được chia sẻ, không có cha", folder_link("SHAREDFOLDER_1234567890"), "Của người khác"),
+        ("cha thuộc chủ sở hữu khác, không đọc được", file_link("SHAREDFILE_1234567890"), "chia-se.pdf"),
+        ("Shared Drive", file_link("TEAMFILE_1234567890"), "nhom.pdf"),
+        ("trong thùng rác", file_link("TRASHED_1234567890"), "da-xoa.txt"),
+    ] {
+        let v = api.call("GET", &link, None).await.unwrap_or_else(|e| panic!("{what}: link vẫn phải phân giải được: {e}"));
+        assert_eq!(v["name"], name, "{what}");
+        assert!(v.get("my_drive").is_none(), "{what}: không được báo my_drive");
+    }
+    // Không hỏi được gốc "Drive của tôi" (403): vẫn phân giải bình thường, chỉ không có my_drive (định vị là best-effort).
+    h.mock.root_fails.store(true, Ordering::SeqCst);
+    let v = api.call("GET", &folder_link("MYFOLDER_B_1234567890"), None).await.unwrap();
+    assert_eq!(v["name"], "2026");
+    assert!(v.get("my_drive").is_none());
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn link_mode_resolves_lists_and_downloads_with_resource_keys() {
     let h = harness(true, true).await;
@@ -1075,6 +1161,7 @@ async fn link_mode_resolves_lists_and_downloads_with_resource_keys() {
 
     let root = api.call("GET", &format!("/api/drive/link?link={}", enc(link)), None).await.unwrap();
     assert_eq!((root["is_dir"].as_bool(), root["name"].as_str(), root["resource_key"].as_str()), (Some(true), Some("Thư mục chia sẻ"), Some("0-KEYabc")));
+    assert!(root.get("my_drive").is_none(), "link ngoài Drive của tôi vẫn đi đường Link Mode");
     assert!(h.mock.rk_headers.lock().unwrap().iter().any(|k| k == "/files/LINKFOLDER_1234567890 LINKFOLDER_1234567890/0-KEYabc"), "metadata của link phải kèm resourcekey");
     assert!(api.call("GET", "/api/drive/link?link=", None).await.is_err());
     assert!(api.call("GET", &format!("/api/drive/link?link={}", enc("https://example.com/x")), None).await.is_err());

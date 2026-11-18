@@ -707,6 +707,74 @@ test('Link Mode: dán link + truy cập → cả khung Drive chuyển sang nội
   } finally { app.close(); }
 });
 
+test('Link trỏ tới THƯ MỤC trong Drive của tôi: chuyển sang tab Drive của tôi, mở thẳng thư mục đó, không vào Link Mode', async () => {
+  const b = makeBackend();
+  const app = await boot(b);
+  try {
+    await until(() => rows(app).length === 5, 'Drive của tôi đã tải');
+    b.st.linkRoot = { ...LINK_FOLDER, id: 'MYFOLDER_B_1234567890', name: '2026', resource_key: '',
+      my_drive: { crumbs: [{ id: 'MYFOLDER_A_1234567890', name: 'Ảnh' }, { id: 'MYFOLDER_B_1234567890', name: '2026' }], select: null } };
+    b.calls.length = 0;
+    await openLink(app, 'https://drive.google.com/drive/folders/MYFOLDER_B_1234567890');
+    await until(() => hasCall(b, 'GET', '/api/drive/list?location=my&folder_id=MYFOLDER_B_1234567890'), 'mở thẳng thư mục đích trong Drive của tôi');
+    const bar = app.document.getElementById('driveCrumbs');
+    await until(() => /Drive của tôi.*Ảnh.*2026/s.test(bar.textContent), 'breadcrumb: Drive của tôi › Ảnh › 2026');
+    assert.equal(app.document.getElementById('modeMy').checked, true, 'đang ở tab Drive của tôi');
+    assert.equal(app.document.getElementById('modeLink').checked, false);
+    assert.ok(app.document.querySelector('.side-btn[data-loc="my"]').classList.contains('active'), 'thanh bên chọn Drive của tôi');
+    assert.equal(app.document.getElementById('btnMkdir').disabled, false, 'Drive của tôi ghi được (không phải Link Mode chỉ xem)');
+    assert.equal(app.document.getElementById('driveLinkInput').value, '', 'ô link đã được xoá');
+    assert.ok(!b.calls.some((c) => c.url.startsWith('/api/drive/list?location=link')), 'không dùng Link Mode');
+    assert.equal(app.document.querySelectorAll('#driveList .row.sel').length, 0, 'link thư mục: không chọn mục nào');
+    // Nút Back lên đúng thư mục cha trong Drive của tôi.
+    app.document.querySelector('#driveCrumbs .back').click();
+    await until(() => hasCall(b, 'GET', '/api/drive/list?location=my&folder_id=MYFOLDER_A_1234567890'), 'Back lên thư mục cha');
+    assert.deepEqual(app.errors, []);
+  } finally { app.close(); }
+});
+
+test('Link trỏ tới TỆP trong Drive của tôi: mở thư mục chứa tệp, chọn và cuộn tới đúng tệp đó', async () => {
+  const b = makeBackend();
+  const app = await boot(b);
+  try {
+    await until(() => rows(app).length === 5, 'Drive của tôi đã tải');
+    const target = fx('drive_list').items[1];                        // big.bin
+    const scrolled = [];
+    app.window.HTMLElement.prototype.scrollIntoView = function () { scrolled.push(this.dataset.key); };
+    b.st.linkRoot = { ...LINK_FILE, id: target.id, name: target.name, resource_key: '',
+      my_drive: { crumbs: [{ id: 'MYFOLDER_A_1234567890', name: 'Ảnh' }], select: target.id } };
+    b.calls.length = 0;
+    await openLink(app, `https://drive.google.com/file/d/${target.id}/view`);
+    await until(() => hasCall(b, 'GET', '/api/drive/list?location=my&folder_id=MYFOLDER_A_1234567890'), 'mở thư mục chứa tệp');
+    await until(() => app.document.querySelectorAll('#driveList .row.sel').length === 1, 'tệp được chọn');
+    assert.equal(app.document.querySelector('#driveList .row.sel').dataset.key, target.id, 'chọn đúng tệp trong link');
+    assert.deepEqual(scrolled, [target.id], 'cuộn tới tệp được chọn');
+    assert.match(app.document.getElementById('driveCrumbs').textContent, /Drive của tôi.*Ảnh/s);
+    assert.equal(app.document.getElementById('modeMy').checked, true);
+    assert.deepEqual(app.errors, []);
+  } finally { app.close(); }
+});
+
+test('Đang ở Link Mode, dán link nằm trong Drive của tôi: thoát Link Mode, về Drive của tôi và mở đúng vị trí', async () => {
+  const b = makeBackend();
+  const app = await boot(b);
+  try {
+    await until(() => rows(app).length === 5, 'Drive của tôi đã tải');
+    await openLink(app);                                             // link ngoài (không có my_drive) → Link Mode như cũ
+    await until(() => /Thư mục chia sẻ/.test(app.document.getElementById('driveCrumbs').textContent), 'đang ở Link Mode');
+    assert.equal(app.document.getElementById('modeLink').checked, true);
+    b.st.linkRoot = { ...LINK_FOLDER, id: 'MYFOLDER_A_1234567890', name: 'Ảnh', resource_key: '',
+      my_drive: { crumbs: [{ id: 'MYFOLDER_A_1234567890', name: 'Ảnh' }], select: null } };
+    b.calls.length = 0;
+    await openLink(app, 'https://drive.google.com/drive/folders/MYFOLDER_A_1234567890');
+    await until(() => hasCall(b, 'GET', '/api/drive/list?location=my&folder_id=MYFOLDER_A_1234567890'), 'mở Ảnh trong Drive của tôi');
+    await until(() => !/Thư mục chia sẻ/.test(app.document.getElementById('driveCrumbs').textContent), 'đã rời Link Mode');
+    assert.equal(app.document.getElementById('modeMy').checked, true);
+    assert.equal(app.document.getElementById('btnMkdir').disabled, false);
+    assert.deepEqual(app.errors, []);
+  } finally { app.close(); }
+});
+
 test('Link Mode: vào thư mục con theo resourcekey của nó; quay về Drive của tôi thì khôi phục trạng thái cũ', async () => {
   const b = makeBackend();
   const app = await boot(b);

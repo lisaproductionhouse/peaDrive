@@ -4,7 +4,8 @@
 //! [`Api::call`] và trả JSON về cho WebView. Toàn bộ định tuyến nằm trong lõi nên kiểm thử được mà không cần cửa sổ.
 //!
 //! * **Đa tài khoản:** `accounts`, `accounts/switch` (tức thì), `accounts/remove`; tác vụ gắn với tài khoản tạo ra nó.
-//! * **Link Mode:** `drive/link` (phân giải link) + `drive/list?location=link&folder_id=…&rk=…`.
+//! * **Link Mode:** `drive/link` (phân giải link; kèm `my_drive` nếu link nằm trong Drive của tôi của tài khoản đang dùng) +
+//!   `drive/list?location=link&folder_id=…&rk=…`.
 //! * **Kiểm tra phiên bản:** gọi máy chủ của bạn lúc khởi động; nếu báo `force_update` thì backend CHẶN mọi route
 //!   (trừ `status`, `update/*`, mở trang cập nhật) và tạm dừng các tác vụ — không chỉ phụ thuộc vào giao diện.
 
@@ -21,7 +22,7 @@ use tokio::task::JoinHandle;
 
 use crate::auth::Auth;
 use crate::config::{load_json, save_json, OAuthConfig, Settings};
-use crate::drive::{ClientPool, DriveClient, DriveFile};
+use crate::drive::{ClientPool, DriveClient, DriveFile, DriveRef};
 use crate::engine::{EnqueueResult, Manager, SmartRequest, UploadRequest};
 use crate::error::Error;
 use crate::local;
@@ -355,8 +356,18 @@ impl Api {
                     return Err("Chưa nhập link Google Drive".into());
                 }
                 let meta = self.manager.resolve(link).await.map_err(s)?;
-                let write_all = self.client().await?.grants().await.write_all;
-                Ok(drive_item(&meta, can_modify(&meta, write_all)))
+                let c = self.client().await?;
+                let mut v = drive_item(&meta, can_modify(&meta, c.grants().await.write_all));
+                // Link nằm trong "Drive của tôi" của tài khoản đang dùng → báo vị trí để giao diện chuyển sang Drive của tôi và mở
+                // thẳng tới đó (thư mục: mở thư mục; tệp: mở thư mục chứa rồi chọn tệp). Không xác định được (link ngoài, được chia
+                // sẻ, Shared Drive, lỗi mạng…) thì bỏ trường này và link xử lý như thường (Link Mode).
+                if let Some(spot) = c.locate_in_my_drive(&DriveRef { id: meta.id.clone(), resource_key: meta.resource_key.clone() }).await {
+                    v["my_drive"] = json!({
+                        "crumbs": spot.folders.iter().map(|(id, name)| json!({"id": id, "name": name})).collect::<Vec<_>>(),
+                        "select": if spot.is_folder { Value::Null } else { json!(meta.id) },
+                    });
+                }
+                Ok(v)
             }
             ("POST", "/api/drive/mkdir") => {
                 let b: Mkdir = body_of(body)?;

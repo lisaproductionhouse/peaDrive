@@ -174,7 +174,7 @@ Giao diện (`ui/index.html` + `style.css` + `app.js`) chỉ biết `fetch('/api
 | Endpoint UI gọi | Xử lý |
 |---|---|
 | `status`, `login`, `disconnect`, `accounts`, `accounts/switch`, `accounts/remove`, `drive/about` | `login` chỉ **mở** trình duyệt (luôn có hộp chọn tài khoản) rồi trả về ngay; UI hỏi `status` tới khi `signins` tăng. `status` kèm `accounts` / `active` / `blocked`. **`accounts/switch` tức thì** (không mạng, không trình duyệt; tài khoản mất token → `relogin:true`). `accounts/remove` (và `disconnect` = gỡ tài khoản đang dùng) tạm dừng tác vụ của tài khoản đó rồi chuyển sang tài khoản còn lại |
-| `drive/link?link=` | phân giải link người dùng dán (file/thư mục, kể cả `resourcekey`) cho **Link Mode** |
+| `drive/link?link=` | phân giải link người dùng dán (file/thư mục, kể cả `resourcekey`) cho **Link Mode**; nếu link nằm trong Drive của tôi của tài khoản đang dùng thì kèm `my_drive: { crumbs: [{id, name}], select }` để giao diện mở thẳng (xem mục Link Mode) |
 | `drive/list?location=&folder_id=&rk=` | `link` (nội dung một link, kèm resourcekey) · `my` · `shared` · `starred` · `trash` · `storage` (file của tôi theo dung lượng giảm dần, tối đa 500) · `team` (Shared Drive); ID khác = thư mục con (trong `trash` không lọc `trashed`) |
 | `drive/mkdir`, `rename`, `delete`, `share` | Drive API (xoá thường = vào thùng rác; `permanent` = xoá vĩnh viễn; `share` = "ai có link đều xem") |
 | `local/list`, `local/reveal` | `local.rs`; trang `::drives` = nơi thường dùng + ổ đĩa; dung lượng ổ trên Windows đọc thẳng bằng `GetDiskFreeSpaceExW` (không qua `fs4`, vì `fs4` gọi `GetVolumePathNameW` trước và hàm đó lỗi trên ổ RAM disk ImDisk) |
@@ -198,6 +198,8 @@ Thử giao diện thật: `cd tools/ui-smoke && npm install && npm test` nạp `
 ## Link Mode
 
 Giao diện cất trạng thái Drive của tôi, dựng một trạng thái Drive mới có `linkRoot` và `location = "link"`; mọi thứ còn lại (sắp xếp, tìm kiếm, chọn nhiều, kéo-thả, breadcrumb) dùng lại nguyên mã cũ. Backend: `drive/link` phân giải gốc, `drive/list?location=link&folder_id=…&rk=…` liệt kê (gửi `X-Goog-Drive-Resource-Keys: <id>/<rk>`), `transfer/download` nhận `resource_key` của từng mục và chuyển tiếp tới cả metadata lẫn các request `Range`.
+
+**Link nằm trong Drive của tôi.** Sau khi phân giải, `drive/link` gọi `DriveClient::locate_in_my_drive`: leo từng cấp theo `parents` (chỉ xin các trường `id,name,mimeType,parents,driveId,trashed`) cho tới gốc `files/root`, tối đa 64 cấp và 8 giây. Tìm thấy → thêm `my_drive.crumbs` (các thư mục từ con của gốc xuống thư mục cần mở; link tệp thì dừng ở thư mục chứa tệp) và `my_drive.select` (id tệp cần chọn, `null` với link thư mục). Là **best-effort, không bao giờ làm hỏng link**: mục thuộc Shared Drive, trong thùng rác, không có cha (mục "được chia sẻ với tôi"), cha không đọc được, lỗi mạng/API hay quá giờ thì bỏ trường `my_drive` và link đi đường Link Mode như cũ. Giao diện (`openInMyDrive` trong `enterLinkMode`) bỏ trạng thái Link Mode, đặt `S.mode = S.location = 'my'`, dựng `crumbs` từ `my_drive`, rồi `loadDrive` chọn và cuộn tới `reveal` nếu là link tệp.
 
 ## Kiểm tra phiên bản và chặn app
 
