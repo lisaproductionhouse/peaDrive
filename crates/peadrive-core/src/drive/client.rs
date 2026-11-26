@@ -21,7 +21,7 @@ pub const DEFAULT_UPLOAD_BASE: &str = "https://www.googleapis.com/upload/drive/v
 /// Khoá trong `appProperties` mà peaDrive dùng để ghi chữ ký file nguồn (`dung lượng:mtime_ms`) lúc tải lên.
 pub const SIGNATURE_PROP: &str = "pdSrc";
 const FILE_FIELDS: &str = "id,name,mimeType,size,md5Checksum,modifiedTime,resourceKey,webViewLink,capabilities(canDownload),appProperties,\
-shortcutDetails(targetId,targetMimeType,targetResourceKey),isAppAuthorized";
+shortcutDetails(targetId,targetMimeType,targetResourceKey),isAppAuthorized,ownedByMe,owners(displayName,emailAddress)";
 const HEADER_TIMEOUT: Duration = Duration::from_secs(30);
 const UA: &str = concat!("peaDrive/", env!("CARGO_PKG_VERSION"));
 pub const TEMP_FOLDER: &str = "peaDrive Temp";

@@ -151,11 +151,11 @@ impl Mock {
                 Resp::Json(
                     200,
                     r#"{"files":[
-                      {"id":"FOLDER1_1234567890","name":"Tài liệu","mimeType":"application/vnd.google-apps.folder","modifiedTime":"2026-01-02T03:04:05Z"},
-                      {"id":"FILEID_1234567890abcdef","name":"big.bin","mimeType":"application/octet-stream","size":"21000000","modifiedTime":"2026-01-03T00:00:00Z","webViewLink":"https://drive.google.com/file/d/FILEID_1234567890abcdef/view","capabilities":{"canDownload":true}},
-                      {"id":"DOC1_1234567890","name":"Báo cáo","mimeType":"application/vnd.google-apps.document","modifiedTime":"2026-01-04T00:00:00Z"},
+                      {"id":"FOLDER1_1234567890","name":"Tài liệu","mimeType":"application/vnd.google-apps.folder","modifiedTime":"2026-01-02T03:04:05Z","ownedByMe":true,"owners":[{"displayName":"Tôi","emailAddress":"me@example.com"}]},
+                      {"id":"FILEID_1234567890abcdef","name":"big.bin","mimeType":"application/octet-stream","size":"21000000","modifiedTime":"2026-01-03T00:00:00Z","webViewLink":"https://drive.google.com/file/d/FILEID_1234567890abcdef/view","capabilities":{"canDownload":true},"ownedByMe":true,"owners":[{"displayName":"Tôi","emailAddress":"me@example.com"}]},
+                      {"id":"DOC1_1234567890","name":"Báo cáo","mimeType":"application/vnd.google-apps.document","modifiedTime":"2026-01-04T00:00:00Z","ownedByMe":false,"owners":[{"displayName":"Lan Anh","emailAddress":"lan.anh@example.com"}]},
                       {"id":"SHORT1_1234567890","name":"lối tắt","mimeType":"application/vnd.google-apps.shortcut","shortcutDetails":{"targetId":"TARGETFOLDER_1234567890","targetMimeType":"application/vnd.google-apps.folder"}},
-                      {"id":"NODL_1234567890","name":"khoá.zip","mimeType":"application/zip","size":"10","capabilities":{"canDownload":false}}
+                      {"id":"NODL_1234567890","name":"khoá.zip","mimeType":"application/zip","size":"10","capabilities":{"canDownload":false},"ownedByMe":false,"owners":[{"emailAddress":"dung@example.com"}]}
                     ]}"#
                         .into(),
                 )
@@ -1096,6 +1096,22 @@ async fn account_without_tokens_asks_for_relogin() {
     let auth = Auth::open(OAuthConfig::default(), Arc::new(MemoryStore::default()), Some(index), Endpoints::default()).unwrap();
     assert!(matches!(auth.switch("x@example.com").await, Err(peadrive_core::Error::NotSignedIn)));
     assert!(matches!(auth.token_for("x@example.com").await, Err(peadrive_core::Error::NotSignedIn)));
+}
+
+/// Danh sách Drive báo chủ sở hữu từng mục để giao diện đánh dấu mục không phải của mình và lọc "chỉ mục tôi sở hữu".
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn drive_list_reports_who_owns_each_item() {
+    let h = harness(true, true).await;
+    let l = h.api.call("GET", "/api/drive/list?location=my&folder_id=root", None).await.unwrap();
+    let by_name = |n: &str| l["items"].as_array().unwrap().iter().find(|i| i["name"] == n).unwrap_or_else(|| panic!("thiếu mục {n}")).clone();
+    let mine = by_name("Tài liệu");
+    assert_eq!((mine["owned_by_me"].as_bool(), mine["owner"].as_str()), (Some(true), Some("Tôi (me@example.com)")));
+    let theirs = by_name("Báo cáo");
+    assert_eq!((theirs["owned_by_me"].as_bool(), theirs["owner"].as_str()), (Some(false), Some("Lan Anh (lan.anh@example.com)")));
+    assert_eq!(by_name("khoá.zip")["owner"], "dung@example.com", "chỉ có email thì hiện email");
+    // Drive không khai báo (vd. mục trong Shared Drive) → null: chưa biết, KHÔNG phải "của người khác".
+    let unknown = by_name("lối tắt");
+    assert!(unknown["owned_by_me"].is_null() && unknown["owner"].is_null());
 }
 
 /// Link trỏ tới mục nằm trong "Drive của tôi" của tài khoản đang dùng: backend báo vị trí để giao diện mở thẳng tới đó.

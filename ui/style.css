@@ -143,7 +143,12 @@ svg.i { width: 1em; height: 1em; flex-shrink: 0; fill: none; stroke: currentColo
 .row:hover { background: rgba(var(--ov), .035); }
 .row.sel { background: rgba(var(--accent-rgb), .16); }
 .list:focus .row.sel { background: rgba(var(--accent-rgb), .24); }
-.row .ficon { width: 22px; height: 22px; display: grid; place-items: center; font-size: calc(17px * var(--fs)); }
+.row .ficon { width: 22px; height: 22px; display: grid; place-items: center; font-size: calc(17px * var(--fs)); position: relative; }
+/* Dấu "không phải của bạn": chấm nhỏ ở góc icon (tên chủ sở hữu nằm trong tooltip của icon). Mục của chính mình không có dấu. */
+.own-dot { position: absolute; right: -2px; bottom: -1px; width: 7px; height: 7px; border-radius: 50%; background: var(--orange); box-shadow: 0 0 0 1.5px var(--panel); pointer-events: none; }
+/* Đang lọc "Chỉ mục tôi sở hữu": nút mở menu có chấm báo nhẹ, thanh trạng thái có dòng chữ nhỏ. */
+.sort-btn.filtered::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--orange); flex-shrink: 0; }
+#driveFootR:not(:empty) { color: var(--orange); }
 .row .name { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .row .name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(11.5px * var(--fs)); }
 .row .open { margin-left: auto; flex-shrink: 0; display: inline-grid; place-items: center; font-size: calc(11px * var(--fs)); color: var(--accent-text); padding: 3px 6px; border-radius: 5px; }

@@ -35,6 +35,38 @@ pub struct DriveFile {
     /// `isAppAuthorized` của Drive: app này có tạo hoặc được mở mục này không. Với quyền `drive.file`, chỉ `true` mới ghi được.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_app_authorized: Option<bool>,
+    /// `ownedByMe`: mục thuộc quyền sở hữu của tài khoản đang đăng nhập. Drive không báo cho mục trong Shared Drive (không có
+    /// chủ sở hữu cá nhân) → `None` (chưa biết, KHÔNG có nghĩa là "của người khác").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owned_by_me: Option<bool>,
+    /// `owners` của Drive (thường một người).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub owners: Vec<DriveOwner>,
+}
+
+/// Chủ sở hữu của một mục (`owners[]` trong Drive API).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriveOwner {
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub email_address: Option<String>,
+}
+
+impl DriveFile {
+    /// Chủ sở hữu để hiển thị: "Tên (email)", hoặc chỉ tên / chỉ email; `None` nếu Drive không báo.
+    pub fn owner_label(&self) -> Option<String> {
+        let o = self.owners.first()?;
+        let name = o.display_name.as_deref().map(str::trim).filter(|s| !s.is_empty());
+        let mail = o.email_address.as_deref().map(str::trim).filter(|s| !s.is_empty());
+        match (name, mail) {
+            (Some(n), Some(e)) if n != e => Some(format!("{n} ({e})")),
+            (Some(n), _) => Some(n.to_string()),
+            (None, Some(e)) => Some(e.to_string()),
+            (None, None) => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -148,6 +180,26 @@ mod tests {
         let own: DriveFile = serde_json::from_str(r#"{"id":"a","isAppAuthorized":true}"#).unwrap();
         let foreign: DriveFile = serde_json::from_str(r#"{"id":"b","isAppAuthorized":false}"#).unwrap();
         assert!(own.app_may_write() && !foreign.app_may_write());
+    }
+
+    #[test]
+    fn reads_ownership_and_formats_the_owner() {
+        let f: DriveFile = serde_json::from_str(
+            r#"{"id":"a","ownedByMe":false,"owners":[{"displayName":"Lan Anh","emailAddress":"lan.anh@example.com","me":false}]}"#,
+        )
+        .unwrap();
+        assert_eq!(f.owned_by_me, Some(false));
+        assert_eq!(f.owner_label().as_deref(), Some("Lan Anh (lan.anh@example.com)"));
+        let only_mail: DriveFile = serde_json::from_str(r#"{"id":"b","ownedByMe":false,"owners":[{"emailAddress":"x@example.com"}]}"#).unwrap();
+        assert_eq!(only_mail.owner_label().as_deref(), Some("x@example.com"));
+        let only_name: DriveFile = serde_json::from_str(r#"{"id":"c","owners":[{"displayName":"Tổ nhóm","emailAddress":"  "}]}"#).unwrap();
+        assert_eq!(only_name.owner_label().as_deref(), Some("Tổ nhóm"));
+        let same: DriveFile = serde_json::from_str(r#"{"id":"d","owners":[{"displayName":"a@b.c","emailAddress":"a@b.c"}]}"#).unwrap();
+        assert_eq!(same.owner_label().as_deref(), Some("a@b.c"), "tên trùng email thì không lặp lại");
+        // Mục trong Shared Drive: Drive không báo ownedByMe/owners → chưa biết (KHÔNG phải "của người khác").
+        let team: DriveFile = serde_json::from_str(r#"{"id":"e","driveId":"TEAM"}"#).unwrap();
+        assert_eq!((team.owned_by_me, team.owner_label()), (None, None));
+        assert!(DriveFile::default().owner_label().is_none());
     }
 
     #[test]

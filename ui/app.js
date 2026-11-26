@@ -4,6 +4,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 
 const S = {
   connected: false,
+  ownedOnly: false,   // lọc "Chỉ mục tôi sở hữu" của khung Drive: giữ khi đổi thư mục/vị trí, về tắt khi mở lại app
   mode: 'my',            // 'my' = Drive thông thường; 'link' = Link Mode (khung Drive hiển thị nội dung của một link)
   myState: null,         // cất trạng thái Drive của tôi khi vào Link Mode để quay lại
   accounts: [], accountId: '', signins: 0, loginError: '',   // tài khoản Google do backend giữ (xem /api/status)
@@ -136,6 +137,10 @@ function sortItems(side, list) {
 function paintSortControls(side) {
   const o = S[side].sort;
   $(side === 'local' ? 'sortLocal' : 'sortDrive').innerHTML = `${icon('sort')}${SORT_KEYS[o.key]}`;
+  if (side === 'drive') {   // đang lọc "Chỉ mục tôi sở hữu": nút mở menu có chấm báo nhẹ + tooltip
+    $('sortDrive').classList.toggle('filtered', S.ownedOnly);
+    $('sortDrive').title = S.ownedOnly ? 'Sắp xếp · đang lọc: chỉ mục tôi sở hữu' : 'Sắp xếp';
+  }
   document.querySelectorAll(`.list-head[data-side="${side}"] [data-sort]`).forEach(h => {
     const on = h.dataset.sort === o.key;
     h.classList.toggle('on', on);
@@ -153,7 +158,21 @@ function sortMenu(side, x, y) {
     '-', { heading: 'Thư mục' },
     { label: 'Trên cùng', checked: o.foldersFirst, run: () => setSort(side, { foldersFirst: true }) },
     { label: 'Xếp lẫn với file', checked: !o.foldersFirst, run: () => setSort(side, { foldersFirst: false }) },
+    ...(side === 'drive' ? ['-', { heading: 'Hiển thị' }, { label: 'Chỉ mục tôi sở hữu', checked: S.ownedOnly, run: toggleOwnedOnly }] : []),
   ]);
+}
+// Bật/tắt lọc "Chỉ mục tôi sở hữu" (khung Drive). Mục đang bị ẩn thì bỏ khỏi vùng chọn để không thao tác nhầm.
+function toggleOwnedOnly() {
+  S.ownedOnly = !S.ownedOnly;
+  const shown = new Set(visible('drive').map(i => i.id));
+  S.drive.sel = new Set([...S.drive.sel].filter(k => shown.has(k)));
+  paintSortControls('drive');
+  renderList('drive');
+}
+// Chú thích cho dấu "không phải của bạn" ở icon: chủ sở hữu (hàng nằm ngoài vùng tự dịch nên dịch tại đây).
+function ownerTip(item) {
+  const s = item.owner ? `Chủ sở hữu: ${item.owner}` : 'Không phải của bạn';
+  return LANG === 'vi' ? s : (tr(s) ?? s);
 }
 function formatDate(t) {
   const d = new Date(t);
@@ -169,7 +188,9 @@ paintSortControls('local'); paintSortControls('drive');   // hiện sẵn nút s
 function visible(side) {
   const st = S[side];
   const q = st.search.trim().toLowerCase();
-  return sortItems(side, q ? st.items.filter(i => i.name.toLowerCase().includes(q)) : st.items);
+  let items = st.items;
+  if (side === 'drive' && S.ownedOnly) items = items.filter(i => i.owned_by_me === true);   // chưa biết chủ sở hữu thì không tính là của tôi
+  return sortItems(side, q ? items.filter(i => i.name.toLowerCase().includes(q)) : items);
 }
 const keyOf = (side, item) => side === 'local' ? item.path : item.id;
 const selectedItems = side => visible(side).filter(i => S[side].sel.has(keyOf(side, i)));
@@ -208,7 +229,8 @@ function renderList(side) {
     if (item.kind === 'drive') size = item.total ? `${formatBytes(item.free)} trống` : '—';
     if (item.kind === 'place') size = '';
     if (item.is_google_doc) size = 'Google Docs';
-    row.innerHTML = `<span class="ficon">${fileIcon(item)}</span>
+    const ownTip = side === 'drive' && item.owned_by_me === false ? ownerTip(item) : '';   // chỉ mục KHÔNG phải của mình mới có chấm
+    row.innerHTML = `<span class="ficon"${ownTip ? ` title="${esc(ownTip)}"` : ''}>${fileIcon(item)}${ownTip ? '<i class="own-dot" aria-hidden="true"></i>' : ''}</span>
       <span class="name"><span title="${esc(item.name)}">${esc(item.name)}</span>${item.is_dir ? `<button class="open" title="Mở thư mục (hoặc nhấp đúp)">${icon('chev-r')}</button>` : ''}</span>
       <span class="date">${item.kind ? '' : formatDate(side === 'local' ? item.mod_time : item.modified_time)}</span>
       <span class="size">${size}</span>`;
@@ -281,7 +303,7 @@ function renderEmpty(side, el, list) {
   } else if (!list.length) {
     const searching = S[side].search.trim();
     html = `<div class="empty"><div class="ring"><div>${icon(side === 'drive' ? 'up' : 'folder')}</div></div>
-      <p>${searching ? 'Không tìm thấy mục phù hợp' : side === 'drive' ? 'Thả file vào đây để tải lên' : 'Không có mục nào'}</p></div>`;
+      <p>${searching ? 'Không tìm thấy mục phù hợp' : side === 'drive' && S.ownedOnly && S.drive.items.length ? 'Không có mục nào do bạn sở hữu trong thư mục này' : side === 'drive' ? 'Thả file vào đây để tải lên' : 'Không có mục nào'}</p></div>`;
   }
   if (html) el.insertAdjacentHTML('beforeend', html);
 }
@@ -297,6 +319,7 @@ function updateFooter(side) {
     $('localFootR').textContent = S.local.path === '::drives' || !S.local.free ? '' : `${formatBytes(S.local.free)} trống`;
   } else {
     $('driveFootL').textContent = S.connected ? left : '—';
+    $('driveFootR').textContent = S.ownedOnly ? 'Đang lọc: chỉ mục tôi sở hữu' : '';
   }
 }
 
@@ -1455,6 +1478,13 @@ OK luôn|Sure!|好的！
 Đã sao chép số tài khoản|Account number copied|已复制账号
 Đang tải bản mới trong trình duyệt|Downloading the new version in your browser|正在浏览器中下载新版本
 Link này nằm trong Drive của tôi — đã mở đúng vị trí|This link is in My Drive — opened at its location|该链接位于“我的云端硬盘”中，已打开对应位置
+Chủ sở hữu: {}|Owner: {}|所有者：{}
+Không phải của bạn|Not owned by you|不属于您
+Hiển thị|Show|显示
+Chỉ mục tôi sở hữu|Only items I own|仅显示我拥有的项目
+Đang lọc: chỉ mục tôi sở hữu|Filtering: only items I own|筛选中：仅我拥有的项目
+Sắp xếp · đang lọc: chỉ mục tôi sở hữu|Sort · filtering: only items I own|排序 · 筛选中：仅我拥有的项目
+Không có mục nào do bạn sở hữu trong thư mục này|No items you own in this folder|此文件夹中没有您拥有的项目
 peaDrive {} có gì mới|What's new in peaDrive {}|peaDrive {} 更新内容
 Mở thư mục|Open folder|打开文件夹
 Tải {} mục lên Google Drive|Upload {} items to Google Drive|将 {} 项上传到 Google Drive

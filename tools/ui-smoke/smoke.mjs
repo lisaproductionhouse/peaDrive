@@ -707,6 +707,119 @@ test('Link Mode: dán link + truy cập → cả khung Drive chuyển sang nội
   } finally { app.close(); }
 });
 
+test('Khung Drive: chỉ mục KHÔNG phải của mình có chấm báo, rê vào icon thấy chủ sở hữu; mục của mình và mục chưa rõ thì sạch', async () => {
+  const app = await boot(makeBackend());
+  try {
+    await until(() => rows(app).length === 5, 'Drive đã tải');
+    const rowOf = (name) => [...rows(app)].find((r) => r.textContent.includes(name));
+    const dot = (name) => rowOf(name).querySelector('.ficon .own-dot');
+    assert.ok(dot('Báo cáo'), 'mục của người khác có chấm');
+    assert.ok(dot('khoá.zip'));
+    for (const clean of ['Tài liệu', 'big.bin', 'lối tắt']) assert.equal(dot(clean), null, `${clean}: của mình / chưa rõ → không có chấm`);
+    assert.equal(rowOf('Báo cáo').querySelector('.ficon').title, 'Chủ sở hữu: Lan Anh (lan.anh@example.com)');
+    assert.equal(rowOf('khoá.zip').querySelector('.ficon').title, 'Chủ sở hữu: dung@example.com', 'chỉ có email thì hiện email');
+    assert.equal(rowOf('Tài liệu').querySelector('.ficon').title, '', 'mục của mình không có tooltip');
+    assert.equal(app.document.querySelectorAll('#localList .own-dot').length, 0, 'khung máy không có chấm');
+    assert.deepEqual(app.errors, []);
+  } finally { app.close(); }
+});
+
+test('Menu sắp xếp của khung Drive có tuỳ chọn tick "Chỉ mục tôi sở hữu": bật thì chỉ còn mục của mình + dấu hiệu đang lọc, giữ khi đổi thư mục, tắt thì trả lại đủ', async () => {
+  const b = makeBackend();
+  const app = await boot(b);
+  try {
+    await until(() => rows(app).length === 5, 'Drive đã tải');
+    const D = app.document;
+    const keys = () => [...rows(app)].map((r) => r.dataset.key).sort();
+    const menuItem = async () => {
+      D.getElementById('sortDrive').click();
+      const menu = await until(() => D.querySelector('.menu'), 'menu sắp xếp');
+      const it = [...menu.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Chỉ mục tôi sở hữu');
+      assert.ok(it, 'menu có mục "Chỉ mục tôi sở hữu"');
+      return it;
+    };
+    // Mặc định tắt: chưa tick, chưa có dấu hiệu lọc nào.
+    let it = await menuItem();
+    assert.equal(it.classList.contains('checked'), false, 'mặc định tắt');
+    assert.equal(D.getElementById('sortDrive').classList.contains('filtered'), false);
+    assert.equal(D.getElementById('driveFootR').textContent, '');
+    it.click();
+    // Bật: chỉ còn mục của mình; nút menu và thanh trạng thái báo đang lọc.
+    assert.deepEqual(keys(), ['FILEID_1234567890abcdef', 'FOLDER1_1234567890']);
+    assert.equal(D.getElementById('sortDrive').classList.contains('filtered'), true, 'nút menu có dấu hiệu lọc');
+    assert.match(D.getElementById('sortDrive').title, /đang lọc/);
+    assert.equal(D.getElementById('driveFootR').textContent, 'Đang lọc: chỉ mục tôi sở hữu');
+    assert.match(D.getElementById('driveFootL').textContent, /^2 mục/);
+    // Bộ lọc áp cho mọi thư mục: vào thư mục con vẫn đang lọc.
+    [...rows(app)].find((r) => r.textContent.includes('Tài liệu')).querySelector('.open').click();
+    await until(() => hasCall(b, 'GET', '/api/drive/list?location=my&folder_id=FOLDER1_1234567890'), 'vào thư mục con');
+    await until(() => D.getElementById('driveCrumbs').textContent.includes('Tài liệu'), 'breadcrumb thư mục con');
+    await until(() => rows(app).length > 0, 'danh sách thư mục con đã tải');
+    assert.deepEqual(keys(), ['FILEID_1234567890abcdef', 'FOLDER1_1234567890'], 'vào thư mục khác vẫn đang lọc');
+    assert.equal(D.getElementById('driveFootR').textContent, 'Đang lọc: chỉ mục tôi sở hữu');
+    // Mở lại menu: đã tick; bấm lần nữa thì tắt lọc và trả lại đủ mục.
+    it = await menuItem();
+    assert.equal(it.classList.contains('checked'), true, 'đang bật thì có tick');
+    it.click();
+    assert.equal(keys().length, 5);
+    assert.equal(D.getElementById('sortDrive').classList.contains('filtered'), false);
+    assert.equal(D.getElementById('sortDrive').title, 'Sắp xếp');
+    assert.equal(D.getElementById('driveFootR').textContent, '');
+    assert.deepEqual(app.errors, []);
+  } finally { app.close(); }
+});
+
+test('Bật lọc "Chỉ mục tôi sở hữu": mục đang chọn mà bị ẩn thì bỏ khỏi vùng chọn; không còn mục nào của mình thì báo đúng lý do', async () => {
+  const all = fx('drive_list');
+  const app = await boot(makeBackend({ driveList: { ...all, items: all.items.filter((i) => i.owned_by_me === false) } }));   // toàn mục của người khác
+  try {
+    await until(() => rows(app).length === 2, 'Drive đã tải (2 mục của người khác)');
+    const D = app.document;
+    rows(app)[0].click();
+    assert.equal(D.querySelectorAll('#driveList .row.sel').length, 1, 'đã chọn một mục');
+    D.getElementById('sortDrive').click();
+    [...(await until(() => D.querySelector('.menu'), 'menu')).querySelectorAll('button')].find((x) => x.textContent.trim() === 'Chỉ mục tôi sở hữu').click();
+    assert.equal(rows(app).length, 0, 'không còn mục nào của mình');
+    assert.match(D.querySelector('#driveList .empty').textContent, /Không có mục nào do bạn sở hữu trong thư mục này/);
+    assert.equal(D.getElementById('driveFootR').textContent, 'Đang lọc: chỉ mục tôi sở hữu');
+    // Tắt lọc: mục trở lại và KHÔNG còn được chọn (đã bị bỏ khỏi vùng chọn lúc bị ẩn).
+    D.getElementById('sortDrive').click();
+    [...(await until(() => D.querySelector('.menu'), 'menu')).querySelectorAll('button')].find((x) => x.textContent.trim() === 'Chỉ mục tôi sở hữu').click();
+    assert.equal(rows(app).length, 2);
+    assert.equal(D.querySelectorAll('#driveList .row.sel').length, 0, 'mục từng bị ẩn không còn nằm trong vùng chọn');
+    assert.deepEqual(app.errors, []);
+  } finally { app.close(); }
+});
+
+test('Chủ sở hữu và bộ lọc có bản dịch EN/ZH (tooltip, mục menu, dòng trạng thái)', async () => {
+  const app = await boot(makeBackend());
+  try {
+    await until(() => rows(app).length === 5, 'Drive đã tải');
+    const D = app.document;
+    const pick = async (lang) => { D.getElementById('uiLang').value = lang; D.getElementById('uiLang').dispatchEvent(new app.window.Event('change')); };
+    const toggle = async () => {
+      D.getElementById('sortDrive').click();
+      const menu = await until(() => D.querySelector('.menu'), 'menu');
+      return menu;
+    };
+    await pick('en');
+    let menu = await toggle();
+    const labels = [...menu.querySelectorAll('button')].map((x) => x.textContent.trim());
+    assert.ok(labels.includes('Only items I own'), 'mục menu bằng tiếng Anh: ' + labels.join(' | '));
+    [...menu.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Only items I own').click();
+    await until(() => D.getElementById('driveFootR').textContent === 'Filtering: only items I own', 'dòng trạng thái bằng tiếng Anh');
+    D.getElementById('sortDrive').click();                                  // tắt lọc để hiện lại mục của người khác (vẽ lại hàng theo ngôn ngữ mới)
+    [...(await until(() => D.querySelector('.menu'), 'menu')).querySelectorAll('button')].find((x) => x.textContent.trim() === 'Only items I own').click();
+    const rep = [...rows(app)].find((r) => r.textContent.includes('Báo cáo'));
+    assert.equal(rep.querySelector('.ficon').title, 'Owner: Lan Anh (lan.anh@example.com)');
+    await pick('zh');
+    D.getElementById('sortDrive').click();
+    menu = await until(() => D.querySelector('.menu'), 'menu');
+    assert.ok([...menu.querySelectorAll('button')].some((x) => x.textContent.trim() === '仅显示我拥有的项目'), 'mục menu bằng tiếng Trung');
+    assert.deepEqual(app.errors, []);
+  } finally { app.close(); }
+});
+
 test('Link trỏ tới THƯ MỤC trong Drive của tôi: chuyển sang tab Drive của tôi, mở thẳng thư mục đó, không vào Link Mode', async () => {
   const b = makeBackend();
   const app = await boot(b);

@@ -144,6 +144,9 @@ fn drive_item(f: &DriveFile, can_modify: bool) -> Value {
         "web_view_link": f.web_view_link,
         "resource_key": f.resource_key,
         "can_modify": can_modify,
+        // Chủ sở hữu: `owned_by_me` = true/false, hoặc null nếu Drive không báo (vd. mục trong Shared Drive); `owner` = "Tên (email)".
+        "owned_by_me": f.owned_by_me,
+        "owner": f.owner_label(),
     })
 }
 
